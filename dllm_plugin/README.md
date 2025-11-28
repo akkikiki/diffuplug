@@ -1,24 +1,24 @@
 # dllm_plugin: vLLM Plugin for Diffusion Language Models
 
-This plugin enables vLLM to run diffusion language models, specifically:
+A vLLM plugin that enables inference for diffusion language models:
 - **Dream**: Diffusion-based language model
 - **LLaDA**: Latent Diffusion Adapted language model
 
 ## Overview
 
-This plugin integrates the diffusion language model implementations from [Diffulex/D2fEngine](../Diffulex) with vLLM's high-performance inference engine. It provides vLLM-compatible adapters for Dream and LLaDA models, allowing them to benefit from vLLM's optimized inference, batching, and serving capabilities.
+This plugin integrates diffusion language model implementations from [Diffulex/D2fEngine](../Diffulex) with vLLM's high-performance inference engine. It provides vLLM-compatible adapters for Dream and LLaDA models, enabling them to leverage vLLM's optimized inference, batching, and serving capabilities.
 
 ## Installation
 
 ### Prerequisites
 
-1. Install [UV](https://github.com/astral-sh/uv) package manager (recommended) or pip
-2. Python 3.9 or higher
+- Python 3.9 or higher
+- [UV](https://github.com/astral-sh/uv) package manager (recommended) or pip
 
 ### Quick Install with UV
 
 ```bash
-# Install UV if you haven't already
+# Install UV
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Install D2fEngine from Diffulex
@@ -47,7 +47,7 @@ cd ../dllm_plugin
 pip install -e .
 ```
 
-The plugin will automatically register with vLLM through the entry points mechanism.
+The plugin automatically registers with vLLM through the entry points mechanism.
 
 For detailed installation instructions, see [INSTALL.md](INSTALL.md).
 
@@ -60,7 +60,7 @@ from vllm import LLM, SamplingParams
 
 # Initialize the LLM with a Dream or LLaDA model
 llm = LLM(
-    model="path/to/dream/model",  # or path to LLaDA model
+    model="path/to/dream/model",
     trust_remote_code=True
 )
 
@@ -78,16 +78,17 @@ for output in outputs:
     print(f"Generated text: {output.outputs[0].text}")
 ```
 
-### Using the OpenAI-Compatible API Server
+### OpenAI-Compatible API Server
+
+Start the vLLM server:
 
 ```bash
-# Start the vLLM server with a diffusion model
 python -m vllm.entrypoints.openai.api_server \
     --model path/to/dream/model \
     --trust-remote-code
 ```
 
-Then use it with the OpenAI client:
+Use the API with the OpenAI client:
 
 ```python
 from openai import OpenAI
@@ -110,7 +111,7 @@ print(response.choices[0].text)
 
 ### Dream (DreamForDiffusionLM)
 
-Dream is a diffusion-based language model that uses full attention (not causal) for generation. The model architecture follows:
+Dream is a diffusion-based language model that uses full attention (not causal) for generation. Architecture features:
 - RMSNorm layer normalization
 - Rotary position embeddings (RoPE)
 - SiLU activation with gating
@@ -120,7 +121,7 @@ Dream is a diffusion-based language model that uses full attention (not causal) 
 
 ### LLaDA (LLaDAForDiffusionLM)
 
-LLaDA is a latent diffusion adapted language model with similar architecture to Dream but with some differences in implementation.
+LLaDA is a latent diffusion adapted language model with architecture similar to Dream with implementation variations.
 
 **Configuration**: Uses `LLaDAConfig` from the model's config.json
 
@@ -128,7 +129,7 @@ LLaDA is a latent diffusion adapted language model with similar architecture to 
 
 The plugin consists of:
 
-1. **Registration Module** (`__init__.py`): Registers the models with vLLM's ModelRegistry
+1. **Registration Module** (`__init__.py`): Registers models with vLLM's ModelRegistry
 2. **Model Adapters** (`models/`):
    - `dream.py`: vLLM adapter for Dream
    - `llada.py`: vLLM adapter for LLaDA
@@ -137,7 +138,7 @@ Each adapter wraps the original Diffulex implementation and provides:
 - vLLM-compatible `forward()` method
 - `compute_logits()` for logit computation
 - `load_weights()` for checkpoint loading
-- Proper integration with vLLM's batching and inference pipeline
+- Integration with vLLM's batching and inference pipeline
 
 ## Plugin Mechanism
 
@@ -162,7 +163,7 @@ This plugin uses vLLM's standard plugin system:
 
 ## Environment Variables
 
-You can control which plugins are loaded using the `VLLM_PLUGINS` environment variable:
+Control plugin loading using the `VLLM_PLUGINS` environment variable:
 
 ```bash
 # Load only specific plugins
@@ -174,30 +175,30 @@ export VLLM_PLUGINS=
 
 ## Differences from Standard vLLM Models
 
-Diffusion language models have some unique characteristics:
+Diffusion language models have unique characteristics:
 
 1. **Full Attention**: Unlike causal LMs, diffusion models use full (bidirectional) attention
-2. **No KV Caching**: Standard KV caching doesn't apply to diffusion models
-3. **Special Generation**: May require different sampling strategies optimized for diffusion
+2. **No KV Caching**: Standard KV caching does not apply to diffusion models
+3. **Special Generation**: Different sampling strategies optimized for diffusion
 
 ## Troubleshooting
 
-### Model not recognized
+### Model Not Recognized
 
-If vLLM doesn't recognize your diffusion model:
+When vLLM does not recognize a diffusion model:
 
-1. Verify the plugin is installed: `pip list | grep dllm-plugin`
-2. Check that the model's `config.json` has the correct `architectures` field:
+1. Verify plugin installation: `uv pip list | grep dllm-plugin`
+2. Check the model's `config.json` for correct `architectures` field:
    - For Dream: `["DreamForDiffusionLM"]`
    - For LLaDA: `["LLaDAForDiffusionLM"]`
 
-### Import errors
+### Import Errors
 
 Ensure all dependencies are installed:
 ```bash
-pip install -e ../Diffulex  # D2fEngine package
-pip install vllm>=0.6.0
-pip install -e .
+uv pip install -e ../Diffulex  # D2fEngine package
+uv pip install vllm>=0.6.0
+uv pip install -e .
 ```
 
 ## Development
@@ -210,10 +211,10 @@ pytest tests/
 
 ### Contributing
 
-Contributions are welcome! Please ensure:
-1. Code follows the existing style
-2. Tests pass
-3. Documentation is updated
+Contributions are welcome. Please ensure:
+1. Code follows existing style conventions
+2. All tests pass
+3. Documentation is updated accordingly
 
 ## License
 
