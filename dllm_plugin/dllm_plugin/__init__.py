@@ -14,6 +14,7 @@ def register():
     This function registers the following models:
     - DreamForDiffusionLM: Dream diffusion language model
     - LLaDAForDiffusionLM: LLaDA diffusion language model
+    - LLaDAModelLM: Alternative name for LLaDA (used by some checkpoints)
     """
     # Register Dream model
     if "DreamForDiffusionLM" not in ModelRegistry.get_supported_archs():
@@ -26,5 +27,12 @@ def register():
     if "LLaDAForDiffusionLM" not in ModelRegistry.get_supported_archs():
         ModelRegistry.register_model(
             "LLaDAForDiffusionLM",
+            "dllm_plugin.models.llada:LLaDAForDiffusionLMVLLM"
+        )
+
+    # Register alternative LLaDA architecture name (used in some HF configs)
+    if "LLaDAModelLM" not in ModelRegistry.get_supported_archs():
+        ModelRegistry.register_model(
+            "LLaDAModelLM",
             "dllm_plugin.models.llada:LLaDAForDiffusionLMVLLM"
         )

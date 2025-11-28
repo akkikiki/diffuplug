@@ -61,6 +61,7 @@ def main():
         model=args.model,
         tensor_parallel_size=args.tensor_parallel_size,
         trust_remote_code=True,
+        enforce_eager=True,  # Disable CUDA graphs for CPU compatibility
         # Additional configurations for diffusion models
         # Note: You may need to adjust these based on your model's requirements
     )
