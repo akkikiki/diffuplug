@@ -220,8 +220,6 @@ Contributions are welcome. Please ensure:
 
 This project is licensed under the Apache License 2.0 - see the LICENSE file for details.
 
-Note: This plugin integrates with Diffulex (MIT License) and vLLM (Apache License 2.0).
-
 ## References
 
 - [vLLM Documentation](https://docs.vllm.ai/)
