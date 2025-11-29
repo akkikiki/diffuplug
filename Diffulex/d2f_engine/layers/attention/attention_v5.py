@@ -259,9 +259,24 @@ class Attention(nn.Module):
                         q_t = q_t.squeeze(0)  # Remove batch dim: (H, S, D)
                         k_t = k_t.squeeze(0)
                         v_t = v_t.squeeze(0)
+
+                        # Debug: Check inputs before attention
+                        logger.debug(f"  Attention inputs: q_t shape={q_t.shape}, k_t shape={k_t.shape}, v_t shape={v_t.shape}")
+                        logger.debug(f"  q_t: has_nan={torch.isnan(q_t).any()}, mean={q_t.mean():.4f}, std={q_t.std():.4f}")
+                        logger.debug(f"  k_t: has_nan={torch.isnan(k_t).any()}, mean={k_t.mean():.4f}, std={k_t.std():.4f}")
+                        logger.debug(f"  v_t: has_nan={torch.isnan(v_t).any()}, mean={v_t.mean():.4f}, std={v_t.std():.4f}")
+                        logger.debug(f"  scale: {self.scale}")
+                        logger.debug(f"  attn_mask shape: {attn_mask.shape}")
+
                         o = torch.nn.functional.scaled_dot_product_attention(
                             q_t, k_t, v_t, attn_mask=attn_mask, scale=self.scale
                         )
+
+                        # Debug: Check output after attention
+                        logger.debug(f"  Attention output: o shape={o.shape}, has_nan={torch.isnan(o).any()}")
+                        if not torch.isnan(o).any():
+                            logger.debug(f"  o: mean={o.mean():.4f}, std={o.std():.4f}")
+
                         o = o.unsqueeze(0)  # Add batch dim back: (1, H, S, D)
                         logger.debug("scaled_dot_product_attention completed (decode warmup)")
                     else:

@@ -8,6 +8,68 @@ with vLLM after installing the dllm_plugin.
 import argparse
 import logging
 import sys
+import os
+
+# Parse arguments FIRST to set environment variables before spawning workers
+parser = argparse.ArgumentParser(
+    description="Run inference with diffusion language models using vLLM"
+)
+parser.add_argument(
+    "--model",
+    type=str,
+    required=True,
+    help="Path to the Dream or LLaDA model directory",
+)
+parser.add_argument(
+    "--prompt",
+    type=str,
+    default="Is Python a good programming language?",
+    help="Input prompt for generation",
+)
+parser.add_argument(
+    "--max-tokens",
+    type=int,
+    default=2,
+    help="Maximum number of tokens to generate",
+)
+parser.add_argument(
+    "--temperature",
+    type=float,
+    default=1.0,
+    help="Sampling temperature",
+)
+parser.add_argument(
+    "--top-p",
+    type=float,
+    default=0.9,
+    help="Top-p sampling parameter",
+)
+parser.add_argument(
+    "--tensor-parallel-size",
+    type=int,
+    default=1,
+    help="Number of GPUs for tensor parallelism",
+)
+parser.add_argument(
+    "--diffusion-steps",
+    type=int,
+    default=None,
+    help="Number of diffusion steps (default: use model config value)",
+)
+parser.add_argument(
+    "--verbose",
+    "-v",
+    action="store_true",
+    help="Enable verbose logging",
+)
+
+args = parser.parse_args()
+
+# Set diffusion steps via environment variable BEFORE registering plugin
+# This ensures worker processes inherit the environment variable
+if args.diffusion_steps is not None:
+    os.environ['DLLM_DIFFUSION_STEPS'] = str(args.diffusion_steps)
+    print(f"Setting diffusion steps to: {args.diffusion_steps}")
 
 # IMPORTANT: Register the plugin BEFORE importing LLM
 # This ensures the patching happens before vLLM's LLM class is used
@@ -39,54 +101,6 @@ logging.getLogger('vllm.v1').setLevel(logging.INFO)
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Run inference with diffusion language models using vLLM"
-    )
-    parser.add_argument(
-        "--model",
-        type=str,
-        required=True,
-        help="Path to the Dream or LLaDA model directory",
-    )
-    parser.add_argument(
-        "--prompt",
-        type=str,
-        default="The future of artificial intelligence is",
-        help="Input prompt for generation",
-    )
-    parser.add_argument(
-        "--max-tokens",
-        type=int,
-        default=2,
-        help="Maximum number of tokens to generate",
-    )
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=1.0,
-        help="Sampling temperature",
-    )
-    parser.add_argument(
-        "--top-p",
-        type=float,
-        default=0.9,
-        help="Top-p sampling parameter",
-    )
-    parser.add_argument(
-        "--tensor-parallel-size",
-        type=int,
-        default=1,
-        help="Number of GPUs for tensor parallelism",
-    )
-    parser.add_argument(
-        "--verbose",
-        "-v",
-        action="store_true",
-        help="Enable verbose logging",
-    )
-
-    args = parser.parse_args()
-    
     # Set logging level based on verbose flag
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)

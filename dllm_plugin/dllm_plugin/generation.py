@@ -113,7 +113,13 @@ def patch_engine_core_for_diffusion():
                 max_model_len = getattr(model_config, 'max_model_len', 4096)
 
                 # Get diffusion-specific parameters from model config
-                diffusion_steps = getattr(hf_config, 'diffusion_steps', 128)
+                # Check for environment variable override first
+                import os
+                diffusion_steps_env = os.environ.get('DLLM_DIFFUSION_STEPS')
+                if diffusion_steps_env is not None:
+                    diffusion_steps = int(diffusion_steps_env)
+                else:
+                    diffusion_steps = getattr(hf_config, 'diffusion_steps', 128)
                 block_size = getattr(hf_config, 'block_size', 4)
                 diffusion_block_size = getattr(hf_config, 'diffusion_block_size', 32)
                 mask_token_id = getattr(hf_config, 'mask_token_id', None)
@@ -194,9 +200,25 @@ def patch_engine_core_for_diffusion():
                 kv_cache_layout = "distinct" if is_cpu else "unified"
                 logger.info(f"[Worker Process] Device: {device}, is_cpu: {is_cpu}, kv_cache_layout: {kv_cache_layout}")
 
+                # Detect model name for sampler selection
+                # LLaDA models contain "llada" in the model path/name
+                # Dream models contain "dream" in the model path/name
+                model_name_lower = model_path.lower()
+                if 'llada' in model_name_lower:
+                    model_name = 'llada'
+                elif 'dream' in model_name_lower:
+                    model_name = 'dream'
+                else:
+                    # Default to llada if can't determine
+                    model_name = 'llada'
+                    logger.warning(f"[Worker Process] Could not determine model type from path '{model_path}', defaulting to 'llada'")
+
+                logger.info(f"[Worker Process] Detected model_name: {model_name}")
+
                 # Create Diffulex config
                 diffulex_config = DiffulexConfig(
                     model=model_path,
+                    model_name=model_name,  # Required for AutoSampler to select correct sampler
                     model_type='diffusion_lm',
                     max_model_len=max_model_len,
                     diffusion_block_size=diffusion_block_size,
@@ -429,20 +451,32 @@ def patch_engine_core_for_diffusion():
                         logger.debug(f"[Worker Process] Step {step_count}: temperatures={temperatures.tolist()}")
 
                         # Sample tokens
+                        logger.debug(f"[Worker Process] Step {step_count}: Calling sampler with logits shape={logits.shape}")
                         sample_output = sampler(logits, temperatures)
+                        logger.debug(f"[Worker Process] Step {step_count}: Sampler returned type={type(sample_output).__name__}")
 
-                        # Debug: Log sampling output
+                        # Debug: Log sampling output structure
                         if step_count <= 5:  # Only log first 5 steps to avoid spam
-                            logger.debug(f"[Worker Process] Step {step_count}: sample_output type={type(sample_output)}")
-                            if hasattr(sample_output, 'sampled_token_ids'):
-                                logger.debug(f"[Worker Process] Step {step_count}: sampled_token_ids={sample_output.sampled_token_ids[:10] if len(sample_output.sampled_token_ids) > 10 else sample_output.sampled_token_ids}")
-                            elif hasattr(sample_output, 'token_ids'):
-                                logger.debug(f"[Worker Process] Step {step_count}: token_ids={sample_output.token_ids[:10] if len(sample_output.token_ids) > 10 else sample_output.token_ids}")
-                            else:
-                                logger.debug(f"[Worker Process] Step {step_count}: sample_output attributes={dir(sample_output)}")
+                            if hasattr(sample_output, 'sampled_tokens_map'):
+                                logger.debug(f"[Worker Process] Step {step_count}: sampled_tokens_map keys={list(sample_output.sampled_tokens_map.keys())}")
+                                for seq_id, tokens_map in sample_output.sampled_tokens_map.items():
+                                    logger.debug(f"[Worker Process] Step {step_count}: seq {seq_id} tokens_map keys={list(tokens_map.keys())}")
+                                    for block_id, tokens in tokens_map.items():
+                                        logger.debug(f"[Worker Process] Step {step_count}: seq {seq_id} block {block_id} tokens={tokens[:10] if hasattr(tokens, '__len__') and len(tokens) > 10 else tokens}")
+                            if hasattr(sample_output, 'accepted_ids_map'):
+                                logger.debug(f"[Worker Process] Step {step_count}: accepted_ids_map={sample_output.accepted_ids_map}")
 
                         # Update sequences
+                        logger.debug(f"[Worker Process] Step {step_count}: Calling scheduler.postprocess")
                         scheduler.postprocess(seqs, sample_output)
+                        logger.debug(f"[Worker Process] Step {step_count}: Postprocess completed")
+
+                        # Debug: Check sequence state after postprocess
+                        if step_count <= 3:
+                            for i, seq in enumerate(seqs):
+                                logger.debug(f"[Worker Process] Step {step_count}: Sequence {i} token_ids length={len(seq.token_ids)}")
+                                logger.debug(f"[Worker Process] Step {step_count}: Sequence {i} last 10 tokens={seq.token_ids[-10:]}")
+                                logger.debug(f"[Worker Process] Step {step_count}: Sequence {i} num_tokens={seq.num_tokens}, input_num_tokens={getattr(seq, 'input_num_tokens', 'N/A')}")
 
                         # Reset context
                         reset_context_diffusion_lm()
@@ -757,7 +791,13 @@ def generate_with_diffusion(
     max_model_len = getattr(model_config, 'max_model_len', 4096)
     
     # Get diffusion config parameters
-    diffusion_steps = getattr(hf_config, 'diffusion_steps', 128)
+    # Check for environment variable override first
+    import os
+    diffusion_steps_env = os.environ.get('DLLM_DIFFUSION_STEPS')
+    if diffusion_steps_env is not None:
+        diffusion_steps = int(diffusion_steps_env)
+    else:
+        diffusion_steps = getattr(hf_config, 'diffusion_steps', 128)
     block_size = getattr(hf_config, 'block_size', 4)
     diffusion_block_size = getattr(hf_config, 'diffusion_block_size', 32)
     mask_token_id = getattr(hf_config, 'mask_token_id', None)

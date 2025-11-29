@@ -123,7 +123,8 @@ class ColumnParallelLinear(LinearBase, LoRAMixin):
         self.weight = nn.Parameter(torch.empty(self.output_size_per_partition, self.input_size))
         self.weight.weight_loader = self.weight_loader
         if bias:
-            self.bias = nn.Parameter(torch.empty(self.output_size_per_partition))
+            # Initialize bias to zeros to avoid NaN from uninitialized memory
+            self.bias = nn.Parameter(torch.zeros(self.output_size_per_partition))
             self.bias.weight_loader = self.weight_loader
         else:
             self.register_parameter("bias", None)
@@ -223,7 +224,8 @@ class RowParallelLinear(LinearBase, LoRAMixin):
         self.weight = nn.Parameter(torch.empty(self.output_size, self.input_size_per_partition))
         self.weight.weight_loader = self.weight_loader
         if bias:
-            self.bias = nn.Parameter(torch.empty(self.output_size))
+            # Initialize bias to zeros to avoid NaN from uninitialized memory
+            self.bias = nn.Parameter(torch.zeros(self.output_size))
             self.bias.weight_loader = self.weight_loader
         else:
             self.register_parameter("bias", None)

@@ -91,9 +91,26 @@ class LLaDAAttention(nn.Module):
         hidden_states: torch.Tensor,
         mask: torch.Tensor | None = None
     ) -> torch.Tensor:
+        import logging
+        logger = logging.getLogger('d2f_engine.models.llada')
+
+        logger.debug(f"  Attention input: hidden_states has_nan={torch.isnan(hidden_states).any()}, mean={hidden_states.mean():.4f}")
+
+        # Debug: Check projection weights and biases
+        logger.debug(f"  q_proj.weight: has_nan={torch.isnan(self.q_proj.weight).any()}, has_inf={torch.isinf(self.q_proj.weight).any()}")
+        if self.q_proj.bias is not None:
+            logger.debug(f"  q_proj.bias: has_nan={torch.isnan(self.q_proj.bias).any()}, has_inf={torch.isinf(self.q_proj.bias).any()}, mean={self.q_proj.bias.mean():.6f}")
+        else:
+            logger.debug(f"  q_proj.bias: None")
+
         q = self.q_proj(hidden_states)
+        logger.debug(f"  After q_proj: has_nan={torch.isnan(q).any()}, mean={q.mean() if not torch.isnan(q).any() else float('nan')}")
+
         k = self.k_proj(hidden_states)
+        logger.debug(f"  After k_proj: has_nan={torch.isnan(k).any()}, mean={k.mean() if not torch.isnan(k).any() else float('nan')}")
+
         v = self.v_proj(hidden_states)
+        logger.debug(f"  After v_proj: has_nan={torch.isnan(v).any()}, mean={v.mean() if not torch.isnan(v).any() else float('nan')}")
         
         # Handle both batched (batch_size, seq_len, hidden_size) and unbatched (seq_len, hidden_size) inputs
         # This is needed because vLLM may pass different shapes during warmup vs actual generation
@@ -191,7 +208,7 @@ class LLaDABlock(nn.Module):
             num_kv_heads=config.n_kv_heads,
             max_position=config.max_sequence_length,
             rms_norm_eps=config.rms_norm_eps,
-            qkv_bias=True,
+            qkv_bias=getattr(config, 'include_qkv_bias', True),
             head_dim=getattr(config, 'head_dim', None),
             rope_theta=getattr(config, "rope_theta", 10000),
             rope_scaling=getattr(config, "rope_scaling", None),
@@ -211,14 +228,35 @@ class LLaDABlock(nn.Module):
         residual: torch.Tensor | None,
         mask: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        import logging
+        logger = logging.getLogger('d2f_engine.models.llada')
+
         if residual is None:
             residual = hidden_states
             hidden_states = self.input_layernorm(hidden_states)
+            logger.debug(f"  After input_layernorm: has_nan={torch.isnan(hidden_states).any()}, mean={hidden_states.mean():.4f}")
         else:
             hidden_states, residual = self.input_layernorm(hidden_states, residual)
+            logger.debug(f"  After input_layernorm (with residual): has_nan={torch.isnan(hidden_states).any()}, mean={hidden_states.mean():.4f}")
+
         hidden_states = self.self_attn(positions, hidden_states, mask)
+        has_nan = torch.isnan(hidden_states).any()
+        logger.debug(f"  After self_attn: has_nan={has_nan}")
+        if not has_nan:
+            logger.debug(f"  After self_attn: mean={hidden_states.mean():.4f}")
+
         hidden_states, residual = self.post_attention_layernorm(hidden_states, residual)
+        has_nan = torch.isnan(hidden_states).any()
+        logger.debug(f"  After post_attention_layernorm: has_nan={has_nan}")
+        if not has_nan:
+            logger.debug(f"  After post_attention_layernorm: mean={hidden_states.mean():.4f}")
+
         hidden_states = self.mlp(hidden_states)
+        has_nan = torch.isnan(hidden_states).any()
+        logger.debug(f"  After mlp: has_nan={has_nan}")
+        if not has_nan:
+            logger.debug(f"  After mlp: mean={hidden_states.mean():.4f}")
+
         return hidden_states, residual
 
 
@@ -254,11 +292,26 @@ class LLaDAModel(nn.Module):
         positions: torch.Tensor,
         mask: torch.Tensor | None = None
     ) -> torch.Tensor:
-        hidden_states = self.transformer.emb_drop(self.transformer.wte(input_ids))
+        import logging
+        logger = logging.getLogger('d2f_engine.models.llada')
+
+        # Debug: Check embeddings
+        embeddings = self.transformer.wte(input_ids)
+        logger.debug(f"Embeddings: shape={embeddings.shape}, has_nan={torch.isnan(embeddings).any()}, mean={embeddings.mean():.4f}")
+
+        hidden_states = self.transformer.emb_drop(embeddings)
+        logger.debug(f"After emb_drop: has_nan={torch.isnan(hidden_states).any()}, mean={hidden_states.mean():.4f}")
+
         residual = None
         for block_idx, block in enumerate(self.transformer.blocks):
             hidden_states, residual = block(positions, hidden_states, residual, mask)
+            # Debug first 3 blocks
+            if block_idx < 3:
+                logger.debug(f"After block {block_idx}: has_nan={torch.isnan(hidden_states).any()}, mean={hidden_states.mean():.4f}")
+
         hidden_states, _ = self.transformer.ln_f(hidden_states, residual)
+        logger.debug(f"After ln_f: has_nan={torch.isnan(hidden_states).any()}, mean={hidden_states.mean():.4f}")
+
         return hidden_states
 
 

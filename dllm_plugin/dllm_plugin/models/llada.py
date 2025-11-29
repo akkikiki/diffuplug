@@ -103,6 +103,10 @@ class LLaDAForDiffusionLMVLLM(nn.Module):
         hidden_states = self.model(input_ids, positions, mask)
         logger.debug(f"LLaDA forward completed: hidden_states shape={hidden_states.shape}")
 
+        # DEBUG: Check hidden states for NaN/Inf right after forward
+        logger.debug(f"LLaDA forward output: hidden_states min={hidden_states.min():.4f}, max={hidden_states.max():.4f}, mean={hidden_states.mean():.4f}")
+        logger.debug(f"LLaDA forward output: has NaN={torch.isnan(hidden_states).any()}, has Inf={torch.isinf(hidden_states).any()}")
+
         return hidden_states
 
     def compute_logits(
@@ -121,7 +125,11 @@ class LLaDAForDiffusionLMVLLM(nn.Module):
         import logging
         logger = logging.getLogger('dllm_plugin.models.llada')
         logger.debug(f"LLaDA compute_logits: hidden_states shape={hidden_states.shape}")
-        
+
+        # DEBUG: Check hidden states for NaN/Inf
+        logger.debug(f"LLaDA compute_logits: hidden_states min={hidden_states.min():.4f}, max={hidden_states.max():.4f}, mean={hidden_states.mean():.4f}")
+        logger.debug(f"LLaDA compute_logits: hidden_states has NaN={torch.isnan(hidden_states).any()}, has Inf={torch.isinf(hidden_states).any()}")
+
         # Use the original model's compute_logits method
         logger.debug("Calling LLaDA model compute_logits...")
         logits = self.model.compute_logits(hidden_states)
@@ -193,6 +201,20 @@ class LLaDAForDiffusionLMVLLM(nn.Module):
         ]
 
         for name, loaded_weight in weights_list:
+            # Debug: Track attention projection weights
+            if any(proj in name for proj in ['q_proj', 'k_proj', 'v_proj', 'qkv_proj']):
+                print(f"\n=== Processing attention projection: {name} ===")
+                print(f"  Weight shape: {loaded_weight.shape}")
+                print(f"  Weight stats: mean={loaded_weight.mean():.6f}, std={loaded_weight.std():.6f}")
+                print(f"  Weight range: min={loaded_weight.min():.6f}, max={loaded_weight.max():.6f}")
+                print(f"  Has NaN: {torch.isnan(loaded_weight).any()}, Has Inf: {torch.isinf(loaded_weight).any()}")
+
+            # Debug: Track transformer-level ff_out specifically
+            if name == "model.transformer.ff_out.weight":
+                print(f"\n=== Processing transformer-level ff_out ===")
+                print(f"  Checkpoint weight name: {name}")
+                print(f"  Weight shape: {loaded_weight.shape}")
+
             # Skip position embeddings if present
             if "rotary_emb.inv_freq" in name:
                 continue
@@ -270,6 +292,9 @@ class LLaDAForDiffusionLMVLLM(nn.Module):
             # Debug: Print mapping for ff_out/lm_head related weights
             if "ff_out" in name or "lm_head" in name:
                 print(f"  Mapping checkpoint weight: '{name}' -> '{mapped_name}'")
+                if name == "model.transformer.ff_out.weight":
+                    print(f"    is_transformer_ff_out: {is_transformer_ff_out}")
+                    print(f"    Target param exists in model: {mapped_name in params_dict}")
 
             # Try to match stacked parameters
             matched = False
@@ -320,6 +345,9 @@ class LLaDAForDiffusionLMVLLM(nn.Module):
                         loaded = True
                         if "ff_out" in name or "lm_head" in name:
                             print(f"    -> Loaded as regular param: '{candidate_name}'")
+                            if name == "model.transformer.ff_out.weight":
+                                print(f"    SUCCESS: Transformer-level ff_out loaded into {candidate_name}")
+                                print(f"    Weight shape: {loaded_weight.shape}")
                         break
 
                 if not loaded:
@@ -385,5 +413,50 @@ class LLaDAForDiffusionLMVLLM(nn.Module):
         print(f"Not loaded: {total_model_params - total_loaded}")
         if total_loaded < total_model_params:
             print(f"\nNote: {total_model_params - total_loaded} parameters were not in checkpoint and will use initialized values")
+
+        # Verify lm_head weights were loaded correctly
+        print(f"\n=== Verifying lm_head Weights ===")
+        if hasattr(self.model, 'lm_head') and hasattr(self.model.lm_head, 'weight'):
+            lm_head_weight = self.model.lm_head.weight
+            print(f"  lm_head.weight shape: {lm_head_weight.shape}")
+            print(f"  lm_head.weight mean: {lm_head_weight.mean():.6f}")
+            print(f"  lm_head.weight std: {lm_head_weight.std():.6f}")
+            print(f"  lm_head.weight min: {lm_head_weight.min():.6f}")
+            print(f"  lm_head.weight max: {lm_head_weight.max():.6f}")
+            print(f"  lm_head.weight has NaN: {torch.isnan(lm_head_weight).any()}")
+            print(f"  lm_head.weight has Inf: {torch.isinf(lm_head_weight).any()}")
+        else:
+            print(f"  ERROR: model.lm_head.weight not found!")
+
+        # Verify attention projection weights were loaded correctly (check first layer)
+        print(f"\n=== Verifying Attention Projection Weights (Layer 0) ===")
+        try:
+            # Access via self.model.model.transformer["blocks"] (ModuleDict)
+            first_block = self.model.model.transformer["blocks"][0]
+            if hasattr(first_block, 'self_attn'):
+                attn = first_block.self_attn
+                for proj_name in ['q_proj', 'k_proj', 'v_proj']:
+                    if hasattr(attn, proj_name):
+                        proj = getattr(attn, proj_name)
+                        # Handle ColumnParallelLinear which may have .linear.weight
+                        if hasattr(proj, 'weight'):
+                            weight = proj.weight
+                        elif hasattr(proj, 'linear') and hasattr(proj.linear, 'weight'):
+                            weight = proj.linear.weight
+                        else:
+                            print(f"  {proj_name}: No weight attribute found")
+                            continue
+
+                        print(f"  {proj_name}.weight:")
+                        print(f"    Shape: {weight.shape}")
+                        print(f"    Stats: mean={weight.mean():.6f}, std={weight.std():.6f}")
+                        print(f"    Range: min={weight.min():.6f}, max={weight.max():.6f}")
+                        print(f"    Has NaN: {torch.isnan(weight).any()}, Has Inf: {torch.isinf(weight).any()}")
+                    else:
+                        print(f"  {proj_name}: Not found in self_attn")
+            else:
+                print(f"  ERROR: self_attn not found in first block")
+        except Exception as e:
+            print(f"  ERROR accessing transformer blocks: {e}")
 
         return loaded_params
