@@ -238,6 +238,7 @@ The implementation follows vLLM's plugin architecture best practices and provide
 
 ## References
 
+- [LLaDA](https://github.com/ML-GSAI/LLaDA/tree/main) - Original LLaDA implemenation
 - [DiffuLex](https://github.com/zhijie-group/Diffulex/tree/main) - nano-vllm extension for diffusion language models (LLaDA, Dream)
 - [vLLM](https://github.com/vllm-project/vllm) - High-performance LLM inference engine
 - [nano-vllm](https://github.com/GeeeekExplorer/nano-vllm) - Minimal implementation reference for vLLM model integration
