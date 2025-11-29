@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/puzzle_piece_icon.png" alt="Plugin Icon" width="500"/>
+  <img src="assets/diffuplug_logo.png" alt="Plugin Icon" width="500"/>
 </p>
 
 # DiffuPlug
@@ -87,7 +87,7 @@ entry_points={
    - Works with OpenAI-compatible API server
 
 2. **Model Support**
-   - Dream (DreamForDiffusionLM)
+   - Dream (DreamForDiffusionLM) - **[WIP - Work In Progress]**
    - LLaDA (LLaDAForDiffusionLM)
 
 3. **Key Capabilities**
@@ -235,3 +235,9 @@ This plugin successfully bridges Diffulex's diffusion language models with vLLM'
 - Standard vLLM serving capabilities
 
 The implementation follows vLLM's plugin architecture best practices and provides comprehensive documentation for users and developers.
+
+## References
+
+- [DiffuLex](https://github.com/zhijie-group/Diffulex/tree/main) - nano-vllm extension for diffusion language models (LLaDA, Dream)
+- [vLLM](https://github.com/vllm-project/vllm) - High-performance LLM inference engine
+- [nano-vllm](https://github.com/GeeeekExplorer/nano-vllm) - Minimal implementation reference for vLLM model integration
