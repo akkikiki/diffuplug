@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/diffuplug_logo.png" alt="Plugin Icon" width="500"/>
+  <img src="assets/diffuplug_logo_v2.png" alt="Plugin Icon" width="500"/>
 </p>
 
 # DiffuPlug
