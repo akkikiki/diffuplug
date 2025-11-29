@@ -6,7 +6,7 @@
 
 ## Overview
 
-I have successfully created a vLLM plugin for Diffusion Language Models (Dream and LLaDA). This plugin allows the diffusion models from the Diffulex/D2fEngine project to run on vLLM's high-performance inference engine.
+This repository is a vLLM plugin for Diffusion Language Models (LLaDA and Dream [WIP]). This plugin allows the diffusion models from the Diffulex/D2fEngine project to run on vLLM's high-performance inference engine.
 
 ## Project Structure
 
