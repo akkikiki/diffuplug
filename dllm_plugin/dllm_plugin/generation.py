@@ -696,9 +696,28 @@ def generate_with_diffusion(
         }
 
         # Prepare diffusion config parameters
+        # Use defaults if not specified
+        if block_size is None:
+            block_size = 4
+        if diffusion_block_size is None:
+            diffusion_block_size = 32
+
+        # Get diffusion_steps from environment variable or model config
+        import os
+        diffusion_steps_env = os.environ.get('DLLM_DIFFUSION_STEPS')
+        if diffusion_steps_env is not None:
+            diffusion_steps = int(diffusion_steps_env)
+        else:
+            # Get from model config, default to 128
+            hf_config = llm.llm_engine.model_config.hf_config
+            diffusion_steps = getattr(hf_config, 'diffusion_steps', 128)
+
+        logger.info(f"Using diffusion_steps={diffusion_steps} (from {'env' if diffusion_steps_env else 'model config'})")
+
         diffusion_config = {
             'block_size': block_size,
             'diffusion_block_size': diffusion_block_size,
+            'diffusion_steps': diffusion_steps,
         }
 
         # Call our custom method in the worker process

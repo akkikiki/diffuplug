@@ -356,14 +356,15 @@ def _patch_engine_core():
     so the patched method is available in the worker process.
     """
     try:
-        from .generation import patch_engine_core_for_diffusion
+        # Use new simplified generation with LLaDASampler
+        from .generation_new import patch_engine_core_for_diffusion_simple
 
         # Patch EngineCoreProc before any LLM instances are created
-        patch_engine_core_for_diffusion()
+        patch_engine_core_for_diffusion_simple()
 
         import logging
         logger = logging.getLogger(__name__)
-        logger.info("dllm_plugin: Patched EngineCoreProc with custom diffusion generation method")
+        logger.info("dllm_plugin: Patched EngineCoreProc with LLaDASampler-based generation")
 
     except Exception as e:
         import warnings
@@ -381,34 +382,34 @@ def _patch_llm_generation():
     """
     try:
         from vllm import LLM
-        # Use relative import since we're in the same package
-        from .generation import patch_llm_generate
-        
+        # Use new simplified generation module
+        from .generation_new import patch_llm_generate
+
         # Store original generate method
         original_generate = LLM.generate
-        
+
         # Create a wrapper that patches instances after initialization
         original_init = LLM.__init__
-        
+
         def patched_init(self, *args, **kwargs):
             model_name = kwargs.get('model', args[0] if args else 'unknown')
             logger.info(f"dllm_plugin: LLM.__init__ called with model={model_name}")
-            logger.info("dllm_plugin: This means the patching IS working!")
+            logger.info("dllm_plugin: Using LLaDASampler for diffusion generation!")
             original_init(self, *args, **kwargs)
             logger.info("dllm_plugin: LLM.__init__ completed, now patching generate method")
             # Patch the instance's generate method
             try:
                 patch_llm_generate(self)
-                logger.info("dllm_plugin: ✓ Successfully patched LLM instance generate method")
+                logger.info("dllm_plugin: ✓ Successfully patched LLM instance with LLaDASampler")
             except Exception as e:
                 logger.error(f"dllm_plugin: ✗ Failed to patch generate method: {e}", exc_info=True)
-        
+
         LLM.__init__ = patched_init
-        
+
         import logging
         logger = logging.getLogger(__name__)
-        logger.info("dllm_plugin: Patched LLM.__init__ to enable custom diffusion generation")
-        
+        logger.info("dllm_plugin: Patched LLM.__init__ to use LLaDASampler")
+
     except Exception as e:
         import warnings
         import traceback
