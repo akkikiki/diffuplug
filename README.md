@@ -2,7 +2,7 @@
   <img src="assets/puzzle_piece_icon.png" alt="Plugin Icon" width="500"/>
 </p>
 
-# dllm_vllm_plugin - Project Summary
+# DiffuPlug
 
 ## Overview
 
