@@ -348,6 +348,73 @@ def _patch_kv_cache_manager():
         warnings.warn(f"Failed to patch KV cache manager: {e}\n{traceback.format_exc()}", RuntimeWarning)
 
 
+def _patch_engine_core():
+    """
+    Patch vLLM's EngineCoreProc to add custom diffusion generation method.
+
+    This must happen at import time, before the worker process is spawned,
+    so the patched method is available in the worker process.
+    """
+    try:
+        from .generation import patch_engine_core_for_diffusion
+
+        # Patch EngineCoreProc before any LLM instances are created
+        patch_engine_core_for_diffusion()
+
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("dllm_plugin: Patched EngineCoreProc with custom diffusion generation method")
+
+    except Exception as e:
+        import warnings
+        import traceback
+        warnings.warn(f"Failed to patch EngineCoreProc: {e}\n{traceback.format_exc()}", RuntimeWarning)
+
+
+def _patch_llm_generation():
+    """
+    Patch vLLM's LLM class to use custom generation for diffusion models.
+
+    This patches the LLM.generate method to detect diffusion models and
+    use the custom diffusion generation process instead of the standard
+    autoregressive loop.
+    """
+    try:
+        from vllm import LLM
+        # Use relative import since we're in the same package
+        from .generation import patch_llm_generate
+        
+        # Store original generate method
+        original_generate = LLM.generate
+        
+        # Create a wrapper that patches instances after initialization
+        original_init = LLM.__init__
+        
+        def patched_init(self, *args, **kwargs):
+            model_name = kwargs.get('model', args[0] if args else 'unknown')
+            logger.info(f"dllm_plugin: LLM.__init__ called with model={model_name}")
+            logger.info("dllm_plugin: This means the patching IS working!")
+            original_init(self, *args, **kwargs)
+            logger.info("dllm_plugin: LLM.__init__ completed, now patching generate method")
+            # Patch the instance's generate method
+            try:
+                patch_llm_generate(self)
+                logger.info("dllm_plugin: ✓ Successfully patched LLM instance generate method")
+            except Exception as e:
+                logger.error(f"dllm_plugin: ✗ Failed to patch generate method: {e}", exc_info=True)
+        
+        LLM.__init__ = patched_init
+        
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info("dllm_plugin: Patched LLM.__init__ to enable custom diffusion generation")
+        
+    except Exception as e:
+        import warnings
+        import traceback
+        warnings.warn(f"Failed to patch LLM generation: {e}\n{traceback.format_exc()}", RuntimeWarning)
+
+
 def register():
     """
     Register diffusion language models with vLLM.
@@ -359,6 +426,13 @@ def register():
     """
     # Patch KV cache manager to handle multiple block sizes
     _patch_kv_cache_manager()
+
+    # Patch EngineCoreProc with custom diffusion generation method
+    # This MUST happen before LLM instances are created so the worker process has the patch
+    _patch_engine_core()
+
+    # Patch LLM generation to use custom diffusion generation
+    _patch_llm_generation()
     
     # Register Dream model
     if "DreamForDiffusionLM" not in ModelRegistry.get_supported_archs():

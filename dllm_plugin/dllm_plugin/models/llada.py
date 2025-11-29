@@ -9,7 +9,6 @@ from torch import nn
 
 from vllm.config import VllmConfig
 from vllm.model_executor.model_loader.weight_utils import default_weight_loader
-from vllm.model_executor.layers.logits_processor import LogitsProcessor
 from vllm.sequence import IntermediateTensors
 
 # Patch torch.distributed for CPU single-process compatibility
@@ -64,11 +63,10 @@ class LLaDAForDiffusionLMVLLM(nn.Module):
         # Initialize the original LLaDA model
         self.model = LLaDAForDiffusionLM(config)
 
-        # Initialize logits processor
-        logit_scale = getattr(config, "logit_scale", 1.0)
-        self.logits_processor = LogitsProcessor(
-            config.vocab_size, scale=logit_scale
-        )
+        # Store logit scale for manual application
+        # We don't use LogitsProcessor because we compute logits ourselves
+        # and LogitsProcessor expects lm_head with quant_method
+        self.logit_scale = getattr(config, "logit_scale", 1.0)
 
     def forward(
         self,
@@ -89,12 +87,21 @@ class LLaDAForDiffusionLMVLLM(nn.Module):
         Returns:
             Hidden states from the model
         """
+        import logging
+        logger = logging.getLogger('dllm_plugin.models.llada')
+        logger.debug(
+            f"LLaDA forward: input_ids shape={input_ids.shape}, "
+            f"positions shape={positions.shape}, device={input_ids.device}"
+        )
+        
         # LLaDA model doesn't use causal masking (full attention for diffusion)
         # The mask parameter in the original implementation is None for full attention
         mask = None
 
         # Call the original LLaDA model's forward method
+        logger.debug("Calling LLaDA model forward...")
         hidden_states = self.model(input_ids, positions, mask)
+        logger.debug(f"LLaDA forward completed: hidden_states shape={hidden_states.shape}")
 
         return hidden_states
 
@@ -111,11 +118,20 @@ class LLaDAForDiffusionLMVLLM(nn.Module):
         Returns:
             Logits over the vocabulary
         """
+        import logging
+        logger = logging.getLogger('dllm_plugin.models.llada')
+        logger.debug(f"LLaDA compute_logits: hidden_states shape={hidden_states.shape}")
+        
         # Use the original model's compute_logits method
+        logger.debug("Calling LLaDA model compute_logits...")
         logits = self.model.compute_logits(hidden_states)
+        logger.debug(f"LLaDA compute_logits completed: logits shape={logits.shape}")
 
-        # Apply logits processor if needed
-        logits = self.logits_processor(None, hidden_states, logits)
+        # Apply logit scaling if needed (we don't use LogitsProcessor since
+        # we compute logits ourselves and LogitsProcessor expects quant_method)
+        if self.logit_scale != 1.0:
+            logits = logits * self.logit_scale
+        logger.debug(f"LLaDA logits after scaling: logits shape={logits.shape}")
 
         return logits
 

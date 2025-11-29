@@ -78,12 +78,21 @@ class DreamForDiffusionLMVLLM(nn.Module):
         Returns:
             Hidden states from the model
         """
+        import logging
+        logger = logging.getLogger('dllm_plugin.models.dream')
+        logger.debug(
+            f"Dream forward: input_ids shape={input_ids.shape}, "
+            f"positions shape={positions.shape}, device={input_ids.device}"
+        )
+        
         # Dream model doesn't use causal masking (full attention for diffusion)
         # The mask parameter in the original implementation is None for full attention
         mask = None
 
         # Call the original Dream model's forward method
+        logger.debug("Calling Dream model forward...")
         hidden_states = self.model(input_ids, positions, mask)
+        logger.debug(f"Dream forward completed: hidden_states shape={hidden_states.shape}")
 
         return hidden_states
 
@@ -100,11 +109,18 @@ class DreamForDiffusionLMVLLM(nn.Module):
         Returns:
             Logits over the vocabulary
         """
+        import logging
+        logger = logging.getLogger('dllm_plugin.models.dream')
+        logger.debug(f"Dream compute_logits: hidden_states shape={hidden_states.shape}")
+        
         # Use the original model's compute_logits method
+        logger.debug("Calling Dream model compute_logits...")
         logits = self.model.compute_logits(hidden_states)
+        logger.debug(f"Dream compute_logits completed: logits shape={logits.shape}")
 
         # Apply logits processor if needed
         logits = self.logits_processor(None, hidden_states, logits)
+        logger.debug(f"Dream logits after processing: logits shape={logits.shape}")
 
         return logits
 
