@@ -3,6 +3,24 @@ Example usage of the dllm_plugin with vLLM.
 
 This script demonstrates how to use diffusion language models (Dream or LLaDA)
 with vLLM after installing the dllm_plugin.
+
+Configurable Parameters:
+  --temperature: Controls sampling randomness (default: 1.0)
+  --max-tokens: Maximum number of tokens to generate (default: 2)
+  --top-p: Top-p (nucleus) sampling parameter (default: 0.9)
+  --diffusion-steps: Number of diffusion denoising steps (default: model config)
+  --block-size: KV cache block size (default: 4, rounded to multiple of 16)
+  --diffusion-block-size: Diffusion generation block size (default: 32)
+
+Example usage:
+  # Basic generation
+  python example_usage.py --model /path/to/model
+
+  # With custom temperature and max tokens
+  python example_usage.py --model /path/to/model --temperature 0.5 --max-tokens 64
+
+  # With custom block sizes (affects generation quality/speed)
+  python example_usage.py --model /path/to/model --block-size 8 --diffusion-block-size 16
 """
 
 import argparse
@@ -23,7 +41,7 @@ parser.add_argument(
 parser.add_argument(
     "--prompt",
     type=str,
-    default="Is Python a good programming language?",
+    default="What is 2+2? Think setp by step",
     help="Input prompt for generation",
 )
 parser.add_argument(
@@ -57,6 +75,18 @@ parser.add_argument(
     help="Number of diffusion steps (default: use model config value)",
 )
 parser.add_argument(
+    "--block-size",
+    type=int,
+    default=None,
+    help="KV cache block size (default: 4, will be rounded up to nearest multiple of 16)",
+)
+parser.add_argument(
+    "--diffusion-block-size",
+    type=int,
+    default=None,
+    help="Diffusion generation block size (default: 32)",
+)
+parser.add_argument(
     "--verbose",
     "-v",
     action="store_true",
@@ -84,31 +114,30 @@ except Exception as e:
 
 from vllm import LLM, SamplingParams
 
-# Set up verbose logging
-logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    stream=sys.stderr
-)
-
-# Enable logging for our plugin
+# Get logger instance (will be configured in main())
 logger = logging.getLogger('dllm_plugin')
-logger.setLevel(logging.DEBUG)
-
-# Enable logging for vLLM components
-logging.getLogger('vllm').setLevel(logging.INFO)
-logging.getLogger('vllm.v1').setLevel(logging.INFO)
 
 
 def main():
-    # Set logging level based on verbose flag
+    # Set up logging based on verbose flag
+    log_level = logging.DEBUG if args.verbose else logging.INFO
+
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        stream=sys.stderr
+    )
+
+    # Configure plugin logging
+    logger.setLevel(log_level)
+
+    # Configure vLLM logging
     if args.verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
-        logging.getLogger('dllm_plugin').setLevel(logging.DEBUG)
         logging.getLogger('vllm').setLevel(logging.DEBUG)
+        logging.getLogger('vllm.v1').setLevel(logging.DEBUG)
     else:
-        logging.getLogger().setLevel(logging.INFO)
-        logging.getLogger('dllm_plugin').setLevel(logging.INFO)
+        logging.getLogger('vllm').setLevel(logging.WARNING)
+        logging.getLogger('vllm.v1').setLevel(logging.WARNING)
 
     print(f"Loading model from: {args.model}")
     print(f"Tensor parallel size: {args.tensor_parallel_size}")
@@ -189,9 +218,9 @@ def main():
     print("-" * 80)
 
     prompts = [
-        "The future of artificial intelligence is",
-        "In the world of quantum computing,",
-        "The impact of climate change on",
+        "Hello! How are you?",
+        "What is 2+2? Think setp by step",
+        #"The impact of climate change on",
     ]
 
     outputs = llm.generate(prompts, sampling_params)
@@ -200,6 +229,29 @@ def main():
         generated_text = output.outputs[0].text
         print(f"Prompt: {prompt}")
         print(f"Output: {generated_text}\n")
+
+    # Example using generate_with_diffusion directly with custom block sizes
+    if args.block_size is not None or args.diffusion_block_size is not None:
+        print("\nCustom block size generation example:")
+        print("-" * 80)
+        print(f"Using block_size={args.block_size}, diffusion_block_size={args.diffusion_block_size}")
+
+        from dllm_plugin import generate_with_diffusion
+
+        custom_outputs = generate_with_diffusion(
+            llm,
+            prompts=["What is the capital of France?"],
+            temperature=args.temperature,
+            max_tokens=args.max_tokens,
+            top_p=args.top_p,
+            block_size=args.block_size,
+            diffusion_block_size=args.diffusion_block_size,
+        )
+
+        for output in custom_outputs:
+            generated_text = output.outputs[0].text
+            print(f"Generated text: {generated_text}")
+        print("-" * 80)
 
     print("-" * 80)
     print("Generation complete!")

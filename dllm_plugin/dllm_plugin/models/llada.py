@@ -153,6 +153,9 @@ class LLaDAForDiffusionLMVLLM(nn.Module):
         Returns:
             Set of loaded parameter names
         """
+        import logging
+        logger = logging.getLogger('dllm_plugin.models.llada')
+
         params_dict = dict(self.named_parameters())
         loaded_params: set[str] = set()
 
@@ -203,17 +206,17 @@ class LLaDAForDiffusionLMVLLM(nn.Module):
         for name, loaded_weight in weights_list:
             # Debug: Track attention projection weights
             if any(proj in name for proj in ['q_proj', 'k_proj', 'v_proj', 'qkv_proj']):
-                print(f"\n=== Processing attention projection: {name} ===")
-                print(f"  Weight shape: {loaded_weight.shape}")
-                print(f"  Weight stats: mean={loaded_weight.mean():.6f}, std={loaded_weight.std():.6f}")
-                print(f"  Weight range: min={loaded_weight.min():.6f}, max={loaded_weight.max():.6f}")
-                print(f"  Has NaN: {torch.isnan(loaded_weight).any()}, Has Inf: {torch.isinf(loaded_weight).any()}")
+                logger.debug(f"\n=== Processing attention projection: {name} ===")
+                logger.debug(f"  Weight shape: {loaded_weight.shape}")
+                logger.debug(f"  Weight stats: mean={loaded_weight.mean():.6f}, std={loaded_weight.std():.6f}")
+                logger.debug(f"  Weight range: min={loaded_weight.min():.6f}, max={loaded_weight.max():.6f}")
+                logger.debug(f"  Has NaN: {torch.isnan(loaded_weight).any()}, Has Inf: {torch.isinf(loaded_weight).any()}")
 
             # Debug: Track transformer-level ff_out specifically
             if name == "model.transformer.ff_out.weight":
-                print(f"\n=== Processing transformer-level ff_out ===")
-                print(f"  Checkpoint weight name: {name}")
-                print(f"  Weight shape: {loaded_weight.shape}")
+                logger.debug(f"\n=== Processing transformer-level ff_out ===")
+                logger.debug(f"  Checkpoint weight name: {name}")
+                logger.debug(f"  Weight shape: {loaded_weight.shape}")
 
             # Skip position embeddings if present
             if "rotary_emb.inv_freq" in name:
@@ -447,11 +450,11 @@ class LLaDAForDiffusionLMVLLM(nn.Module):
                             print(f"  {proj_name}: No weight attribute found")
                             continue
 
-                        print(f"  {proj_name}.weight:")
-                        print(f"    Shape: {weight.shape}")
-                        print(f"    Stats: mean={weight.mean():.6f}, std={weight.std():.6f}")
-                        print(f"    Range: min={weight.min():.6f}, max={weight.max():.6f}")
-                        print(f"    Has NaN: {torch.isnan(weight).any()}, Has Inf: {torch.isinf(weight).any()}")
+                        logger.debug(f"  {proj_name}.weight:")
+                        logger.debug(f"    Shape: {weight.shape}")
+                        logger.debug(f"    Stats: mean={weight.mean():.6f}, std={weight.std():.6f}")
+                        logger.debug(f"    Range: min={weight.min():.6f}, max={weight.max():.6f}")
+                        logger.debug(f"    Has NaN: {torch.isnan(weight).any()}, Has Inf: {torch.isinf(weight).any()}")
                     else:
                         print(f"  {proj_name}: Not found in self_attn")
             else:

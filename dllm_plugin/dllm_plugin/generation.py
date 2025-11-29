@@ -38,7 +38,7 @@ def patch_engine_core_for_diffusion():
     try:
         from vllm.v1.engine.core import EngineCoreProc
 
-        def run_diffusion_generation(self, prompts: List[str], sampling_params_dict: dict) -> List[dict]:
+        def run_diffusion_generation(self, prompts: List[str], sampling_params_dict: dict, diffusion_config: dict = None) -> List[dict]:
             """
             Custom method to run diffusion generation in the worker process.
             This runs in the EngineCoreProc where self.model_executor has access to the model.
@@ -46,10 +46,13 @@ def patch_engine_core_for_diffusion():
             Args:
                 prompts: List of input prompts
                 sampling_params_dict: Dict with sampling parameters (temperature, max_tokens, etc.)
+                diffusion_config: Dict with diffusion-specific config (block_size, diffusion_block_size, etc.)
 
             Returns:
                 List of dicts with generated text and metadata
             """
+            if diffusion_config is None:
+                diffusion_config = {}
             logger.info(f"[Worker Process] Running diffusion generation for {len(prompts)} prompts")
 
             try:
@@ -120,13 +123,24 @@ def patch_engine_core_for_diffusion():
                     diffusion_steps = int(diffusion_steps_env)
                 else:
                     diffusion_steps = getattr(hf_config, 'diffusion_steps', 128)
-                block_size = getattr(hf_config, 'block_size', 4)
-                diffusion_block_size = getattr(hf_config, 'diffusion_block_size', 32)
+
+                # Get block_size and diffusion_block_size from diffusion_config if provided
+                # Otherwise fall back to hf_config defaults
+                block_size = diffusion_config.get('block_size')
+                if block_size is None:
+                    block_size = getattr(hf_config, 'block_size', 4)
+
+                diffusion_block_size = diffusion_config.get('diffusion_block_size')
+                if diffusion_block_size is None:
+                    diffusion_block_size = getattr(hf_config, 'diffusion_block_size', 32)
+
                 mask_token_id = getattr(hf_config, 'mask_token_id', None)
 
                 # Diffulex requires kvcache_block_size to be divisible by 16
                 # Round up to nearest multiple of 16
                 kvcache_block_size = ((block_size + 15) // 16) * 16
+
+                logger.info(f"[Worker Process] Using block_size={block_size}, diffusion_block_size={diffusion_block_size}, kvcache_block_size={kvcache_block_size}")
                 if kvcache_block_size < 16:
                     kvcache_block_size = 16
 
@@ -406,7 +420,9 @@ def patch_engine_core_for_diffusion():
                 import torch
                 device = next(model.parameters()).device
                 step_count = 0
-                max_steps = 1000
+                max_steps = diffusion_steps  # Use configured diffusion steps as limit
+
+                logger.info(f"[Worker Process] Starting generation with max_steps={max_steps}")
 
                 while not scheduler.is_finished() and step_count < max_steps:
                     step_count += 1
@@ -489,7 +505,10 @@ def patch_engine_core_for_diffusion():
                             pass
                         raise
 
-                logger.info(f"[Worker Process] Completed diffusion generation in {step_count} steps")
+                if step_count >= max_steps:
+                    logger.info(f"[Worker Process] Reached max diffusion steps limit: {step_count}/{max_steps}")
+                else:
+                    logger.info(f"[Worker Process] Completed diffusion generation in {step_count} steps (max: {max_steps})")
 
                 # Extract results
                 results = []
@@ -616,6 +635,8 @@ def generate_with_diffusion(
     max_tokens: Optional[int] = None,
     temperature: float = 0.2,
     top_p: Optional[float] = None,
+    block_size: Optional[int] = None,
+    diffusion_block_size: Optional[int] = None,
     **kwargs
 ) -> List[RequestOutput]:
     """
@@ -631,6 +652,8 @@ def generate_with_diffusion(
         max_tokens: Maximum tokens to generate (defaults to sampling_params.max_tokens)
         temperature: Sampling temperature (defaults to 0.2 for diffusion models)
         top_p: Top-p sampling parameter
+        block_size: KV cache block size (defaults to 4, will be rounded up to nearest multiple of 16)
+        diffusion_block_size: Diffusion generation block size (defaults to 32)
         **kwargs: Additional generation parameters
 
     Returns:
@@ -672,13 +695,20 @@ def generate_with_diffusion(
             'top_p': sampling_params.top_p if hasattr(sampling_params, 'top_p') else None,
         }
 
+        # Prepare diffusion config parameters
+        diffusion_config = {
+            'block_size': block_size,
+            'diffusion_block_size': diffusion_block_size,
+        }
+
         # Call our custom method in the worker process
         try:
             logger.info("Calling run_diffusion_generation in worker process...")
             results = llm.llm_engine.engine_core.call_utility(
                 'run_diffusion_generation',
                 prompts,
-                sampling_params_dict
+                sampling_params_dict,
+                diffusion_config
             )
 
             logger.info(f"Got results from worker: {results}")
@@ -1022,7 +1052,7 @@ def generate_with_diffusion(
         # Run generation loop
         results = []
         step_count = 0
-        max_steps = 1000  # Safety limit
+        max_steps = diffusion_steps  # Use configured diffusion steps as limit
 
         logger.info(f"Starting diffusion generation loop (max {max_steps} steps)")
 
@@ -1091,7 +1121,9 @@ def generate_with_diffusion(
                 raise
 
         if step_count >= max_steps:
-            logger.warning(f"Generation loop reached max steps ({max_steps}), stopping")
+            logger.info(f"Reached max diffusion steps limit: {step_count}/{max_steps}")
+        else:
+            logger.info(f"Completed diffusion generation in {step_count} steps (max: {max_steps})")
         
         # Extract results
         for prompt, seq in zip(prompts, sequences):
