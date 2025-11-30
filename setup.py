@@ -17,6 +17,12 @@ setup(
         "torch>=2.0.0",
         "transformers>=4.30.0",
     ],
+    extras_require={
+        "dev": [
+            "pytest>=7.0.0",
+            "pytest-mock>=3.10.0",
+        ],
+    },
     entry_points={
         "vllm.general_plugins": [
             "register_dllm_models = dllm_plugin:register"
