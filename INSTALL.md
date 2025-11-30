@@ -29,39 +29,7 @@ echo "alias uvon='source .venv/bin/activate'" >> ~/.zshrc  # or ~/.bashrc for ba
 source ~/.zshrc
 ```
 
-### 1. Install D2fEngine (Diffulex)
-
-The dllm_plugin depends on the D2fEngine package from Diffulex. Navigate to the Diffulex directory and install it:
-
-```bash
-cd /path/to/dllm_vllm_plugin/Diffulex
-uv sync
-source .venv/bin/activate  # or use 'uvon' if you set up the alias
-uv pip install -e .
-```
-
-### 2. Install vLLM
-
-Install vLLM in the same environment:
-
-```bash
-uv pip install vllm
-```
-
-Note: As mentioned in the Diffulex README, there are some issues with UV venv management for vLLM, so we install it independently.
-
-### 3. Install the dllm_plugin
-
-Now install the plugin:
-
-```bash
-cd /path/to/dllm_vllm_plugin/dllm_plugin
-uv pip install -e .
-```
-
-The `-e` flag installs the package in editable mode, which is useful for development.
-
-### Alternative: Install Everything in One Environment
+### Install Everything in One Environment
 
 If you prefer to set up everything from the plugin directory:
 
@@ -73,7 +41,8 @@ uv venv
 source .venv/bin/activate
 
 # Install Diffulex
-uv pip install -e ../Diffulex
+cd Diffulex
+uv pip install -e Diffulex
 
 # Install vLLM
 uv pip install vllm

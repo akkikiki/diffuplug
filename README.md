@@ -37,17 +37,18 @@ This plugin provides vLLM-compatible adapters for diffusion language models:
 # Install UV
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install D2fEngine from Diffulex
-cd ../Diffulex
-uv sync
+# Create and activate virtual environment
+uv venv
 source .venv/bin/activate
-uv pip install -e .
+
+# Install Diffulex
+cd Diffulex
+uv pip install -e Diffulex
 
 # Install vLLM
 uv pip install vllm
 
 # Install the plugin
-cd ../dllm_plugin
 uv pip install -e .
 ```
 
