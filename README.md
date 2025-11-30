@@ -191,11 +191,6 @@ The plugin consists of:
   - Block-based iterative denoising
   - No Diffulex dependency
 
-### Dream Architecture:
-- **Model**: Diffulex `DreamForDiffusionLM`
-- **Sampler**: Diffulex `AutoSampler`
-- **Status**: Needs update to match LLaDA architecture
-
 ## Plugin Mechanism
 
 This plugin uses vLLM's standard plugin system:
