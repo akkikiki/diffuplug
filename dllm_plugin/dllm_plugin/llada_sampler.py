@@ -116,6 +116,7 @@ class LLaDASampler:
         steps: int = 128,
         gen_length: int = 128,
         block_length: int = 32,
+        tokenizer = None,
     ) -> torch.Tensor:
         """
         Generate text using LLaDA diffusion algorithm.
@@ -127,6 +128,7 @@ class LLaDASampler:
             steps: Total number of diffusion steps
             gen_length: Length of text to generate
             block_length: Block size for generation
+            tokenizer: Optional tokenizer for decoding intermediate states
 
         Returns:
             Generated token IDs of shape (batch_size, prompt_len + gen_length)
@@ -176,16 +178,74 @@ class LLaDASampler:
             block_mask_index = (x[:, block_start:block_end] == self.mask_token_id)
             num_transfer_tokens = get_num_transfer_tokens(block_mask_index, steps_per_block)
 
-            logger.debug(f"Processing block {block_idx + 1}/{num_blocks}")
+            logger.info(f"Processing block {block_idx + 1}/{num_blocks}")
 
             # Diffusion steps for this block
             for step_idx in range(steps_per_block):
                 mask_index = (x == self.mask_token_id)
 
+                # Log state at start of step
+                if step_idx == 0 or (step_idx + 1) % 5 == 0 or step_idx == steps_per_block - 1:
+                    num_masked = mask_index.sum().item()
+                    logger.info(
+                        f"  Step {step_idx + 1}/{steps_per_block} (Block {block_idx + 1}): "
+                        f"{num_masked} tokens still masked"
+                    )
+                    # Show current sequence state
+                    logger.info(f"    Current sequence (first 30 tokens): {x[0].tolist()[:30]}")
+                    if tokenizer is not None:
+                        try:
+                            decoded = tokenizer.decode(x[0], skip_special_tokens=False)
+                            logger.info(f"    Current sequence (decoded): '{decoded[:200]}...'")
+                        except Exception as e:
+                            logger.warning(f"    Could not decode sequence: {e}")
+
                 # Get model logits
-                # Note: vLLM models require positions parameter and return logits directly
+                # Note: vLLM models require positions parameter
+                # But we also need to pass attention_mask (all 1s for full attention like reference)
                 positions = torch.arange(x.shape[1], device=x.device).unsqueeze(0).expand(x.shape[0], -1)
-                logits = model(x, positions)
+
+                # Create attention mask (all 1s for full attention, like reference implementation)
+                attention_mask = torch.ones_like(x, dtype=torch.long)
+
+                # Diagnostic logging for first step
+                if step_idx == 0 and block_idx == 0:
+                    logger.info("  [DIAGNOSTIC] Model input:")
+                    logger.info(f"    Input shape: {x.shape}")
+                    logger.info(f"    Input tokens (first 20): {x[0, :20].tolist()}")
+                    logger.info(f"    Positions (first 20): {positions[0, :20].tolist()}")
+                    logger.info(f"    Attention mask shape: {attention_mask.shape}")
+                    logger.info(f"    Number of mask tokens in input: {(x == self.mask_token_id).sum().item()}")
+
+                # Call model with attention mask
+                hidden_states = model(x, positions, attention_mask=attention_mask)
+
+                # Diagnostic logging for first step
+                if step_idx == 0 and block_idx == 0:
+                    logger.info("  [DIAGNOSTIC] Model output (hidden states):")
+                    logger.info(f"    Hidden states shape: {hidden_states.shape}")
+
+                # Compute logits from hidden states
+                logits = model.compute_logits(hidden_states)
+
+                # Diagnostic logging for first step
+                if step_idx == 0 and block_idx == 0:
+                    logger.info("  [DIAGNOSTIC] Model output (logits):")
+                    logger.info(f"    Logits shape: {logits.shape}")
+                    # Statistics across vocabulary for first masked position
+                    first_masked_pos = (x[0] == self.mask_token_id).nonzero(as_tuple=True)[0][0].item()
+                    logits_at_pos = logits[0, first_masked_pos]
+                    logger.info(f"    Logits at first masked position (pos {first_masked_pos}):")
+                    logger.info(f"      Min: {logits_at_pos.min().item():.2f}")
+                    logger.info(f"      Max: {logits_at_pos.max().item():.2f}")
+                    logger.info(f"      Mean: {logits_at_pos.mean().item():.2f}")
+                    logger.info(f"      Std: {logits_at_pos.std().item():.2f}")
+                    # Show how many tokens have reasonable logits
+                    num_positive = (logits_at_pos > 0).sum().item()
+                    num_very_negative = (logits_at_pos < -10).sum().item()
+                    logger.info(f"      Tokens with logit > 0: {num_positive}")
+                    logger.info(f"      Tokens with logit < -10: {num_very_negative}")
+                    logger.info(f"      Total vocabulary size: {logits.shape[-1]}")
 
                 # Optional: Set EOS logits to -inf
                 if self.logits_eos_inf:
@@ -231,11 +291,64 @@ class LLaDASampler:
                 # Unmask selected tokens
                 x[transfer_index] = x0[transfer_index]
 
-                if step_idx % 10 == 0:
-                    logger.debug(
-                        f"Block {block_idx + 1}, Step {step_idx + 1}/{steps_per_block}: "
-                        f"Unmasked {transfer_index.sum().item()} tokens"
-                    )
+                # Log after unmasking
+                if step_idx == 0 or (step_idx + 1) % 5 == 0 or step_idx == steps_per_block - 1:
+                    num_unmasked = transfer_index.sum().item()
+                    logger.info(f"    → Unmasked {num_unmasked} tokens this step")
+
+                    # Show confidence/probability of selected tokens
+                    if num_unmasked > 0:
+                        # Get the confidences of the tokens that were just unmasked
+                        unmasked_confidences = confidence[transfer_index]
+                        mean_conf = unmasked_confidences.mean().item()
+                        min_conf = unmasked_confidences.min().item()
+                        max_conf = unmasked_confidences.max().item()
+                        logger.info(
+                            f"    Token confidences - mean: {mean_conf:.4f}, "
+                            f"min: {min_conf:.4f}, max: {max_conf:.4f}"
+                        )
+
+                        # Show top 5 unmasked tokens with their confidences and decoded values
+                        if num_unmasked > 0:
+                            # Get indices of unmasked tokens
+                            unmasked_positions = transfer_index[0].nonzero(as_tuple=True)[0][:5]  # First 5
+                            logger.info(f"    Top unmasked tokens:")
+                            for pos in unmasked_positions:
+                                token_id = x[0, pos].item()
+                                token_conf = confidence[0, pos].item()
+
+                                # Also show the raw logits for this position
+                                token_logit = logits[0, pos, token_id].item()
+                                # Get top 3 logits at this position for comparison
+                                top_logits, top_indices = torch.topk(logits[0, pos], k=3)
+
+                                if tokenizer is not None:
+                                    try:
+                                        token_text = tokenizer.decode([token_id])
+                                        logger.info(
+                                            f"      Position {pos}: token_id={token_id}, prob={token_conf:.4f}, "
+                                            f"logit={token_logit:.2f}, text='{token_text}'"
+                                        )
+                                        # Show top 3 logits for debugging
+                                        logger.info(f"        Top 3 logits at pos {pos}: {top_logits.tolist()}")
+                                    except:
+                                        logger.info(
+                                            f"      Position {pos}: token_id={token_id}, prob={token_conf:.4f}, "
+                                            f"logit={token_logit:.2f}"
+                                        )
+                                else:
+                                    logger.info(
+                                        f"      Position {pos}: token_id={token_id}, prob={token_conf:.4f}, "
+                                        f"logit={token_logit:.2f}"
+                                    )
+
+                    logger.info(f"    Sequence after unmask (first 30 tokens): {x[0].tolist()[:30]}")
+                    if tokenizer is not None:
+                        try:
+                            decoded = tokenizer.decode(x[0], skip_special_tokens=False)
+                            logger.info(f"    Sequence after unmask (decoded): '{decoded[:200]}...'")
+                        except Exception as e:
+                            logger.warning(f"    Could not decode sequence: {e}")
 
         logger.info("Generation complete")
         return x

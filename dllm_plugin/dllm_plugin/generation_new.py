@@ -46,6 +46,36 @@ def patch_engine_core_for_diffusion_simple():
             if diffusion_config is None:
                 diffusion_config = {}
 
+            # Direct print to stderr to verify function is called
+            import sys
+            print(f"\n{'='*80}", file=sys.stderr)
+            print(f"[WORKER DEBUG] run_diffusion_generation_simple CALLED", file=sys.stderr)
+            print(f"[WORKER DEBUG] Number of prompts: {len(prompts)}", file=sys.stderr)
+            print(f"{'='*80}\n", file=sys.stderr)
+            sys.stderr.flush()
+
+            # Configure logging for worker process
+            import logging
+            worker_logger = logging.getLogger('dllm_plugin.generation_new')
+            if not worker_logger.handlers:
+                handler = logging.StreamHandler(sys.stderr)
+                handler.setLevel(logging.INFO)
+                formatter = logging.Formatter('(Worker) %(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                handler.setFormatter(formatter)
+                worker_logger.addHandler(handler)
+                worker_logger.setLevel(logging.INFO)
+                worker_logger.propagate = False
+
+            # Also configure logger for llada_sampler
+            sampler_logger = logging.getLogger('dllm_plugin.llada_sampler')
+            if not sampler_logger.handlers:
+                sampler_handler = logging.StreamHandler(sys.stderr)
+                sampler_handler.setLevel(logging.INFO)
+                sampler_handler.setFormatter(formatter)
+                sampler_logger.addHandler(sampler_handler)
+                sampler_logger.setLevel(logging.INFO)
+                sampler_logger.propagate = False
+
             logger.info(
                 f"[Worker Process] Running simple diffusion generation "
                 f"for {len(prompts)} prompts"
@@ -102,7 +132,8 @@ def patch_engine_core_for_diffusion_simple():
                 sampler = LLaDASampler(
                     mask_token_id=126336,
                     temperature=temperature,
-                    remasking='low_confidence'
+                    remasking='low_confidence',
+                    confidence_eos_eot_inf=True,  # Prevent premature EOS generation
                 )
                 logger.info(f"[Worker Process] Created LLaDASampler")
 
@@ -157,6 +188,24 @@ def patch_engine_core_for_diffusion_simple():
                             f"steps={steps}"
                         )
 
+                        # Log initial state
+                        logger.info("[Worker Process] ===== INITIAL STATE =====")
+                        logger.info(f"[Worker Process] Prompt: '{prompt}'")
+                        logger.info(f"[Worker Process] Prompt token IDs (first 20): {prompt_ids[0].tolist()[:20]}")
+                        logger.info(f"[Worker Process] Prompt length: {prompt_ids.shape[1]}")
+                        logger.info(f"[Worker Process] Generation length: {gen_length}")
+                        logger.info(f"[Worker Process] Mask token ID: {sampler.mask_token_id}")
+
+                        # Show what the initial sequence looks like (prompt + masks)
+                        import torch
+                        mask_tokens = torch.full((1, gen_length), sampler.mask_token_id, dtype=torch.long, device=device)
+                        initial_sequence = torch.cat([prompt_ids, mask_tokens], dim=1)
+                        logger.info(f"[Worker Process] Initial sequence shape: {initial_sequence.shape}")
+                        logger.info(f"[Worker Process] Initial sequence (first 30 tokens): {initial_sequence[0].tolist()[:30]}")
+                        logger.info(f"[Worker Process] Initial sequence (last 20 tokens, all masks): {initial_sequence[0].tolist()[-20:]}")
+                        logger.info(f"[Worker Process] Device: {device}")
+                        logger.info("[Worker Process] ========================")
+
                         # Generate
                         output_ids = sampler.generate(
                             model=model,
@@ -164,7 +213,8 @@ def patch_engine_core_for_diffusion_simple():
                             attention_mask=attention_mask,
                             steps=steps,
                             gen_length=gen_length,
-                            block_length=block_length
+                            block_length=block_length,
+                            tokenizer=tokenizer
                         )
 
                         # Decode output

@@ -11,6 +11,7 @@ Configurable Parameters:
   --diffusion-steps: Number of diffusion denoising steps (default: model config)
   --block-size: KV cache block size (default: 4, rounded to multiple of 16)
   --diffusion-block-size: Diffusion generation block size (default: 32)
+  --use-chat-template: Apply chat template to prompts (for Instruct models)
 
 Example usage:
   # Basic generation
@@ -21,6 +22,9 @@ Example usage:
 
   # With custom block sizes (affects generation quality/speed)
   python example_usage.py --model /path/to/model --block-size 8 --diffusion-block-size 16
+
+  # With chat template (for Instruct models)
+  python example_usage.py --model GSAI-ML/LLaDA-8B-Instruct --use-chat-template --max-tokens 128
 """
 
 import argparse
@@ -91,6 +95,11 @@ parser.add_argument(
     "-v",
     action="store_true",
     help="Enable verbose logging",
+)
+parser.add_argument(
+    "--use-chat-template",
+    action="store_true",
+    help="Apply chat template to prompts (for Instruct models)",
 )
 
 args = parser.parse_args()
@@ -182,6 +191,16 @@ def main():
     else:
         logger.warning("⚠ Could not verify if generate method was patched")
 
+    # Get tokenizer for chat template
+    tokenizer = llm.get_tokenizer()
+
+    # Helper function to apply chat template if requested
+    def format_prompt(prompt):
+        if args.use_chat_template:
+            message = {"role": "user", "content": prompt}
+            return tokenizer.apply_chat_template([message], add_generation_prompt=True, tokenize=False)
+        return prompt
+
     # Create sampling parameters
     sampling_params = SamplingParams(
         temperature=args.temperature,
@@ -190,16 +209,19 @@ def main():
     )
 
     # Single prompt example
+    formatted_prompt = format_prompt(args.prompt)
     print(f"\nPrompt: {args.prompt}")
+    if args.use_chat_template:
+        print(f"Formatted prompt: {formatted_prompt[:200]}...")
     print("-" * 80)
-    
+
     logger.info("Starting generation...")
     logger.debug(f"Sampling params: {sampling_params}")
-    
+
     try:
         logger.info("Calling llm.generate()...")
-        
-        outputs = llm.generate([args.prompt], sampling_params)
+
+        outputs = llm.generate([formatted_prompt], sampling_params)
         logger.info("Generation completed successfully")
     except KeyboardInterrupt:
         logger.error("Generation interrupted by user")
@@ -223,7 +245,10 @@ def main():
         #"The impact of climate change on",
     ]
 
-    outputs = llm.generate(prompts, sampling_params)
+    # Apply chat template to batch prompts if requested
+    formatted_prompts = [format_prompt(p) for p in prompts]
+
+    outputs = llm.generate(formatted_prompts, sampling_params)
 
     for prompt, output in zip(prompts, outputs):
         generated_text = output.outputs[0].text

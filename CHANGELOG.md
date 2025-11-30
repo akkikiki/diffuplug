@@ -111,6 +111,86 @@ Main Process                          Worker Process
 
 ### Fixed
 
+#### HuggingFace Model Integration for LLaDA (2025-11-29)
+
+**Problem:** LLaDA model produced garbage output (random tokens like ": Spencer.\n., "e:, until... the") instead of coherent text. The Diffulex `d2f_engine` model architecture didn't match HuggingFace checkpoint weights.
+
+**Root Cause:** Diffulex has two LLaDA implementations:
+1. `d2f_engine/models/llada.py` - Custom Llama-style architecture (incompatible with HF weights)
+2. `examples/model_cache/llada/modeling_llada.py` - Copy of HF model (compatible)
+
+The plugin was using the incompatible d2f_engine model, causing weight mismatches and garbage output.
+
+**Solution:** Switch to HuggingFace's official LLaDA model via `AutoModel.from_pretrained()` with `trust_remote_code=True`.
+
+**Changes:**
+
+1. **Model Loading** (`dllm_plugin/dllm_plugin/models/llada.py:67-74`)
+   - Replaced Diffulex d2f_engine model with HuggingFace AutoModel
+   - Used `trust_remote_code=True` to load official implementation from hub
+   - Model weights now match architecture exactly
+
+2. **Weight Loading Override** (`dllm_plugin/dllm_plugin/models/llada.py:79-87`)
+   - Overrode `load_weights()` to be no-op since HF AutoModel already loads weights
+   - Prevents vLLM from trying to reload weights and causing validation errors
+
+3. **Tensor Dimension Handling** (`dllm_plugin/dllm_plugin/models/llada.py:116-147`)
+   - vLLM passes 1D tensors during warmup, HF model expects 2D
+   - Track original dimension → unsqueeze to 2D for HF → squeeze output back
+   - Ensures output shape matches input shape for vLLM compatibility
+
+4. **Hidden States Extraction** (`dllm_plugin/dllm_plugin/models/llada.py:138-141`)
+   - HF model returns `hidden_states` as tuple of tensors (one per layer)
+   - Extract last element: `hidden_states = output.hidden_states[-1]`
+   - Fixes `AttributeError: 'tuple' object has no attribute 'shape'`
+
+5. **EOS Token Prevention** (`dllm_plugin/dllm_plugin/generation_new.py:136`)
+   - Enabled `confidence_eos_eot_inf=True` in LLaDASampler
+   - Prevents premature `<|endoftext|>` token generation
+   - Model now generates coherent text instead of ending immediately
+
+**Impact:**
+- ✅ Model generates coherent text: "2+2=4" instead of garbage
+- ✅ Uses official HuggingFace implementation (matches reference)
+- ✅ Compatible with vLLM's interface and dimension requirements
+- ✅ Prevents premature sequence termination
+
+**Limitations - vLLM Optimizations NOT Used:**
+
+⚠️ **No PagedAttention**:
+- Diffusion models re-encode the entire sequence at each step (cannot reuse KV cache)
+- Creates dummy KV cache group to satisfy vLLM assertions (`__init__.py:37-66`)
+- Each diffusion step calls `model(full_sequence)` fresh with no KV reuse
+
+⚠️ **No Continuous Batching**:
+- LLaDASampler uses direct model calls in diffusion loop
+- Bypasses vLLM's generation pipeline entirely
+- Diffusion generation incompatible with autoregressive scheduler
+
+⚠️ **No KV Cache**:
+- Autoregressive: Generate one token, cache past KV states
+- Diffusion: Process entire sequence with changing masks at each step
+- Cannot reuse computations from previous diffusion steps
+
+**What vLLM Features We DO Use:**
+- ✅ Model loading and weight management
+- ✅ Worker process architecture
+- ✅ Device abstraction (CPU/CUDA)
+- ✅ Tokenizer integration
+- ✅ Request/response handling
+
+**Architecture Note:**
+We use vLLM as a **model serving framework**, but actual generation bypasses vLLM's core performance optimizations because diffusion generation is fundamentally incompatible with autoregressive assumptions.
+
+**Future Work:**
+Adapting diffusion algorithm to work within vLLM's batching system would require major architectural changes to both the scheduler and generation logic.
+
+**Verification:**
+```bash
+python test_scripts/test_hf_model.py
+```
+Expected: "2+2=4" instead of garbage tokens.
+
 #### NaN Values During Forward Pass (2025-11-29)
 
 **Problem:** Model produced NaN values immediately after attention projections, causing generation to fail.
@@ -200,6 +280,8 @@ AssertionError: Torch not compiled with CUDA enabled
 
 | File | Purpose | Key Changes |
 |------|---------|-------------|
+| `dllm_plugin/dllm_plugin/models/llada.py` | HuggingFace model integration | Lines 28-31, 67-74, 79-87, 116-147, 138-141 |
+| `dllm_plugin/dllm_plugin/generation_new.py` | EOS token prevention | Line 136 |
 | `Diffulex/d2f_engine/engine/sequence.py` | Device parameter | Lines 213-229, 248-276, 307-310, 478-482 |
 | `Diffulex/d2f_engine/layers/attention/attention_v5.py` | CPU fallbacks | Lines 26, 134-147, 299-351 |
 | `Diffulex/d2f_engine/layers/linear.py` | Bias initialization | Lines 127, 228 |

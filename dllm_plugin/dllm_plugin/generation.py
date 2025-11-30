@@ -53,6 +53,34 @@ def patch_engine_core_for_diffusion():
             """
             if diffusion_config is None:
                 diffusion_config = {}
+
+            # Direct print to stderr to verify function is called
+            import sys
+            print(f"\n{'='*80}", file=sys.stderr)
+            print(f"[WORKER DEBUG] run_diffusion_generation CALLED", file=sys.stderr)
+            print(f"[WORKER DEBUG] Number of prompts: {len(prompts)}", file=sys.stderr)
+            print(f"{'='*80}\n", file=sys.stderr)
+            sys.stderr.flush()
+
+            # Debug breakpoint (may not work in subprocess)
+            try:
+                import ipdb; ipdb.set_trace(context=20)
+            except Exception as e:
+                print(f"[WORKER DEBUG] ipdb failed: {e}", file=sys.stderr)
+
+            # Configure logging for worker process
+            # Use stderr because Ray/vLLM captures stderr from worker subprocesses
+            import logging
+            worker_logger = logging.getLogger('dllm_plugin.generation')
+            if not worker_logger.handlers:
+                handler = logging.StreamHandler(sys.stderr)
+                handler.setLevel(logging.INFO)
+                formatter = logging.Formatter('(Worker) %(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                handler.setFormatter(formatter)
+                worker_logger.addHandler(handler)
+                worker_logger.setLevel(logging.INFO)
+                worker_logger.propagate = False  # Prevent double logging
+
             logger.info(f"[Worker Process] Running diffusion generation for {len(prompts)} prompts")
 
             try:
@@ -424,6 +452,17 @@ def patch_engine_core_for_diffusion():
 
                 logger.info(f"[Worker Process] Starting generation with max_steps={max_steps}")
 
+                # Log initial state
+                logger.info("[Worker Process] ===== INITIAL STATE =====")
+                for i, seq in enumerate(sequences):
+                    initial_tokens = seq.token_ids[:20] if len(seq.token_ids) > 20 else seq.token_ids
+                    logger.info(f"[Worker Process] Sequence {i} initial tokens: {initial_tokens}")
+                    try:
+                        initial_text = tokenizer.decode(seq.token_ids, skip_special_tokens=False)
+                        logger.info(f"[Worker Process] Sequence {i} initial text: '{initial_text}'")
+                    except Exception as e:
+                        logger.warning(f"[Worker Process] Could not decode initial tokens: {e}")
+
                 while not scheduler.is_finished() and step_count < max_steps:
                     step_count += 1
                     if step_count % 10 == 0:
@@ -497,6 +536,31 @@ def patch_engine_core_for_diffusion():
                         # Reset context
                         reset_context_diffusion_lm()
 
+                        # Log intermediate outputs at regular intervals
+                        if step_count % 20 == 0 or step_count <= 5:
+                            logger.info(f"[Worker Process] ===== INTERMEDIATE OUTPUT (Step {step_count}) =====")
+                            for i, seq in enumerate(seqs):
+                                # Get current token_ids
+                                current_tokens = seq.token_ids[-50:] if len(seq.token_ids) > 50 else seq.token_ids
+                                logger.info(f"[Worker Process] Sequence {i} current tokens (last 50): {current_tokens}")
+
+                                # Try to decode current state
+                                try:
+                                    # Decode all tokens from the sequence
+                                    all_text = tokenizer.decode(seq.token_ids, skip_special_tokens=False)
+                                    logger.info(f"[Worker Process] Sequence {i} full text: '{all_text}'")
+
+                                    # Also try with skip_special_tokens=True
+                                    clean_text = tokenizer.decode(seq.token_ids, skip_special_tokens=True)
+                                    logger.info(f"[Worker Process] Sequence {i} clean text: '{clean_text}'")
+
+                                    # Decode just completion tokens if available
+                                    if hasattr(seq, 'completion_token_ids') and seq.completion_token_ids:
+                                        completion_text = tokenizer.decode(seq.completion_token_ids, skip_special_tokens=False)
+                                        logger.info(f"[Worker Process] Sequence {i} completion text: '{completion_text}'")
+                                except Exception as e:
+                                    logger.warning(f"[Worker Process] Could not decode intermediate tokens: {e}")
+
                     except Exception as e:
                         logger.error(f"[Worker Process] Error in generation step {step_count}: {e}", exc_info=True)
                         try:
@@ -511,18 +575,26 @@ def patch_engine_core_for_diffusion():
                     logger.info(f"[Worker Process] Completed diffusion generation in {step_count} steps (max: {max_steps})")
 
                 # Extract results
+                logger.info("[Worker Process] ===== FINAL RESULTS =====")
                 results = []
                 for i, (prompt, seq) in enumerate(zip(prompts, sequences)):
+                    logger.info(f"[Worker Process] Extracting result for sequence {i}")
+                    logger.info(f"[Worker Process] Sequence {i} is_finished: {seq.is_finished}")
+                    logger.info(f"[Worker Process] Sequence {i} total token_ids length: {len(seq.token_ids)}")
+                    logger.info(f"[Worker Process] Sequence {i} all token_ids: {seq.token_ids}")
+
                     if seq.is_finished:
                         generated_token_ids = seq.completion_token_ids
                         generated_text = tokenizer.decode(generated_token_ids, skip_special_tokens=True)
+                        logger.info(f"[Worker Process] Sequence {i} completion_token_ids: {generated_token_ids}")
                     else:
                         generated_token_ids = seq.completion_token_ids if hasattr(seq, 'completion_token_ids') else []
                         generated_text = tokenizer.decode(generated_token_ids, skip_special_tokens=True) if generated_token_ids else ""
+                        logger.info(f"[Worker Process] Sequence {i} (not finished) completion_token_ids: {generated_token_ids}")
 
-                    # Debug: Log completion tokens
-                    logger.debug(f"[Worker Process] Sequence {i}: completion_token_ids={generated_token_ids[:20] if len(generated_token_ids) > 20 else generated_token_ids}")
-                    logger.debug(f"[Worker Process] Sequence {i}: generated_text='{generated_text}'")
+                    # Detailed logging
+                    logger.info(f"[Worker Process] Sequence {i}: completion_token_ids={generated_token_ids[:20] if len(generated_token_ids) > 20 else generated_token_ids}")
+                    logger.info(f"[Worker Process] Sequence {i}: generated_text='{generated_text}'")
 
                     results.append({
                         'prompt': prompt,
