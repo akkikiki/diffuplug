@@ -51,18 +51,6 @@ cd ../dllm_plugin
 uv pip install -e .
 ```
 
-### Alternative Install with pip
-
-```bash
-# Install D2fEngine package from Diffulex
-cd ../Diffulex
-pip install -e .
-
-# Install the plugin
-cd ../dllm_plugin
-pip install -e .
-```
-
 The plugin automatically registers with vLLM through the entry points mechanism.
 
 For detailed installation instructions, see [INSTALL.md](INSTALL.md).
