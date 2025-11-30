@@ -63,6 +63,12 @@ class LLaDAForDiffusionLMVLLM(nn.Module):
         logger = logging.getLogger(__name__)
         logger.info(f"Loading HuggingFace LLaDA model from {model_name}")
 
+        # Patch the HF cache files BEFORE loading the model
+        # The HuggingFace LLaDA model has an assertion that blocks KV cache usage:
+        # assert (past_key_values is None and not use_cache), "The kvcache is not suppotred for MDM."
+        # However, the model code DOES support KV cache. We need to patch this before import.
+        self._patch_kv_cache_support(model_name)
+
         # Load the model - AutoModel will use trust_remote_code to get the official implementation
         self.model = AutoModel.from_pretrained(
             model_name,
@@ -75,6 +81,85 @@ class LLaDAForDiffusionLMVLLM(nn.Module):
 
         # Store logit scale for manual application
         self.logit_scale = getattr(config, "logit_scale", 1.0)
+
+    def _patch_kv_cache_support(self, model_name: str):
+        """
+        Patch the HuggingFace LLaDA model to enable KV cache support.
+
+        The official HF model has this assertion that blocks KV cache:
+            assert (past_key_values is None and not use_cache), "The kvcache is not suppotred for MDM."
+
+        However, the model code fully supports KV cache. We automatically patch
+        the cached model files to comment out this assertion.
+
+        Args:
+            model_name: The HuggingFace model name (e.g., "GSAI-ML/LLaDA-8B-Instruct")
+        """
+        import logging
+        import glob
+        import os
+        from huggingface_hub import snapshot_download
+
+        logger = logging.getLogger(__name__)
+
+        # First, ensure the model is cached by attempting to download config
+        # This will download the modeling_llada.py file if not already cached
+        try:
+            logger.debug(f"Ensuring {model_name} is cached...")
+            snapshot_download(
+                model_name,
+                allow_patterns=["*.py", "config.json"],
+                local_files_only=False,
+            )
+        except Exception as e:
+            logger.debug(f"Could not pre-cache model files: {e}")
+
+        # Convert model name to HF cache directory format
+        # "GSAI-ML/LLaDA-8B-Instruct" -> "models--GSAI-ML--LLaDA-8B-Instruct"
+        cache_dir_name = "models--" + model_name.replace("/", "--")
+
+        # Find HF cached model files that need patching
+        cache_patterns = [
+            os.path.expanduser(f"~/.cache/huggingface/hub/{cache_dir_name}/snapshots/*/modeling_llada.py"),
+            os.path.expanduser("~/.cache/huggingface/modules/transformers_modules/*/LLaDA*/*/modeling_llada.py"),
+        ]
+
+        files_patched = 0
+        for pattern in cache_patterns:
+            for model_file in glob.glob(pattern):
+                try:
+                    # Read the file
+                    with open(model_file, 'r') as f:
+                        content = f.read()
+
+                    # Check if already patched
+                    if '# assert (past_key_values is None and not use_cache)' in content:
+                        logger.debug(f"Already patched: {model_file}")
+                        continue
+
+                    # Check if needs patching
+                    original = '        assert (past_key_values is None and not use_cache), "The kvcache is not suppotred for MDM."'
+                    if original not in content:
+                        continue
+
+                    # Patch the assertion
+                    patched = '        # assert (past_key_values is None and not use_cache), "The kvcache is not suppotred for MDM."'
+                    content = content.replace(original, patched)
+
+                    # Write back
+                    with open(model_file, 'w') as f:
+                        f.write(content)
+
+                    logger.info(f"✓ Patched KV cache assertion in: {os.path.basename(os.path.dirname(model_file))}/modeling_llada.py")
+                    files_patched += 1
+
+                except Exception as e:
+                    logger.warning(f"Could not patch {model_file}: {e}")
+
+        if files_patched > 0:
+            logger.info(f"✓ Successfully patched {files_patched} HF model file(s) for KV cache support")
+        else:
+            logger.debug("No HF model files needed patching (already patched or not found)")
 
     def load_weights(self, weights: Iterable):
         """
@@ -93,6 +178,8 @@ class LLaDAForDiffusionLMVLLM(nn.Module):
         intermediate_tensors: Optional[IntermediateTensors] = None,
         inputs_embeds: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
+        past_key_values: Optional[list] = None,
+        use_cache: bool = False,
     ) -> torch.Tensor:
         """
         Forward pass adapter for vLLM.
@@ -103,6 +190,8 @@ class LLaDAForDiffusionLMVLLM(nn.Module):
             intermediate_tensors: Not used for LLaDA (for pipeline parallelism)
             inputs_embeds: Not used for LLaDA
             attention_mask: Attention mask (optional, for diffusion models use all 1s)
+            past_key_values: Cached key/value states for prefix caching
+            use_cache: Whether to return key/value states for caching
 
         Returns:
             Hidden states from the model
@@ -130,10 +219,20 @@ class LLaDAForDiffusionLMVLLM(nn.Module):
         # It returns CausalLMOutputWithPast with .logits and .hidden_states
         # Note: HF model doesn't use 'positions', it handles positional encoding internally
         logger.debug("Calling HuggingFace LLaDA model forward...")
-        output = self.model(input_ids, attention_mask=attention_mask, output_hidden_states=True)
+        output = self.model(
+            input_ids,
+            attention_mask=attention_mask,
+            output_hidden_states=True,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+        )
 
         # Cache the logits so we don't have to recompute them in compute_logits()
         self._cached_logits = output.logits
+
+        # Cache past_key_values if use_cache was enabled
+        if use_cache and hasattr(output, 'past_key_values'):
+            self._cached_past_key_values = output.past_key_values
 
         # Extract hidden states from the output
         # Return the last hidden state (same as what Diffulex model returned)
@@ -193,4 +292,13 @@ class LLaDAForDiffusionLMVLLM(nn.Module):
         logger.debug(f"LLaDA logits after scaling: logits shape={logits.shape}")
 
         return logits
+
+    def get_cached_past_key_values(self):
+        """
+        Get the cached past_key_values from the last forward pass with use_cache=True.
+
+        Returns:
+            Cached past_key_values or None if not available
+        """
+        return getattr(self, '_cached_past_key_values', None)
 

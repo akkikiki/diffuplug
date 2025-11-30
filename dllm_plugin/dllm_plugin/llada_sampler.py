@@ -170,6 +170,8 @@ class LLaDASampler:
         )
 
         # Generate each block
+        cached_kv = None  # Store cached past_key_values for prefix
+
         for block_idx in range(num_blocks):
             block_start = prompt_len + block_idx * block_length
             block_end = prompt_len + (block_idx + 1) * block_length
@@ -179,6 +181,24 @@ class LLaDASampler:
             num_transfer_tokens = get_num_transfer_tokens(block_mask_index, steps_per_block)
 
             logger.info(f"Processing block {block_idx + 1}/{num_blocks}")
+
+            # Cache prefix KV for blocks after the first one
+            if block_idx > 0 and block_start > 0:
+                logger.info(f"  Caching prefix KV for tokens 0:{block_start} (prefix length: {block_start})")
+                prefix_tokens = x[:, :block_start]
+                prefix_positions = torch.arange(prefix_tokens.shape[1], device=x.device).unsqueeze(0).expand(prefix_tokens.shape[0], -1)
+                prefix_attention_mask = torch.ones_like(prefix_tokens, dtype=torch.long)
+
+                # Call model with use_cache=True to get past_key_values
+                _ = model(prefix_tokens, prefix_positions, attention_mask=prefix_attention_mask, use_cache=True)
+                cached_kv = model.get_cached_past_key_values()
+
+                if cached_kv is not None:
+                    logger.info(f"  ✓ Cached prefix KV: {len(cached_kv)} layers")
+                else:
+                    logger.warning(f"  ⚠ Failed to cache prefix KV")
+            else:
+                logger.info(f"  No prefix caching for block 0 (no prefix yet)")
 
             # Diffusion steps for this block
             for step_idx in range(steps_per_block):
@@ -202,23 +222,65 @@ class LLaDASampler:
 
                 # Get model logits
                 # Note: vLLM models require positions parameter
-                # But we also need to pass attention_mask (all 1s for full attention like reference)
-                positions = torch.arange(x.shape[1], device=x.device).unsqueeze(0).expand(x.shape[0], -1)
-
-                # Create attention mask (all 1s for full attention, like reference implementation)
-                attention_mask = torch.ones_like(x, dtype=torch.long)
+                # With prefix caching, we only pass the suffix (from block_start onwards)
+                if cached_kv is not None:
+                    # Use cached prefix KV, only compute current block + onwards
+                    model_input = x[:, block_start:]
+                    positions = torch.arange(model_input.shape[1], device=x.device).unsqueeze(0).expand(model_input.shape[0], -1)
+                    # Offset positions by block_start since we're using cached KV for prefix
+                    positions = positions + block_start
+                    attention_mask = torch.ones_like(model_input, dtype=torch.long)
+                else:
+                    # No cached KV, compute full sequence
+                    model_input = x
+                    positions = torch.arange(x.shape[1], device=x.device).unsqueeze(0).expand(x.shape[0], -1)
+                    attention_mask = torch.ones_like(x, dtype=torch.long)
 
                 # Diagnostic logging for first step
                 if step_idx == 0 and block_idx == 0:
                     logger.info("  [DIAGNOSTIC] Model input:")
-                    logger.info(f"    Input shape: {x.shape}")
-                    logger.info(f"    Input tokens (first 20): {x[0, :20].tolist()}")
-                    logger.info(f"    Positions (first 20): {positions[0, :20].tolist()}")
+                    logger.info(f"    Input shape: {model_input.shape}")
+                    logger.info(f"    Input tokens (first 20): {model_input[0, :min(20, model_input.shape[1])].tolist()}")
+                    logger.info(f"    Positions (first 20): {positions[0, :min(20, positions.shape[1])].tolist()}")
                     logger.info(f"    Attention mask shape: {attention_mask.shape}")
-                    logger.info(f"    Number of mask tokens in input: {(x == self.mask_token_id).sum().item()}")
+                    logger.info(f"    Number of mask tokens in input: {(model_input == self.mask_token_id).sum().item()}")
+                    logger.info(f"    Using cached KV: {cached_kv is not None}")
 
-                # Call model with attention mask
-                hidden_states = model(x, positions, attention_mask=attention_mask)
+                # Log cache usage for first step of each block
+                if step_idx == 0:
+                    if cached_kv is not None:
+                        logger.info(f"    Using prefix cache: computing only {model_input.shape[1]} tokens (saved {block_start} tokens)")
+                    else:
+                        logger.info(f"    No prefix cache: computing full sequence of {model_input.shape[1]} tokens")
+
+                # Call model with attention mask and cached KV if available
+                hidden_states = model(
+                    model_input,
+                    positions,
+                    attention_mask=attention_mask,
+                    past_key_values=cached_kv,
+                    use_cache=False,
+                )
+
+                # If we used cached KV, we need to pad the outputs back to full length
+                if cached_kv is not None:
+                    # hidden_states and cached_logits only cover the suffix
+                    # Pad with zeros for prefix positions
+                    prefix_hidden = torch.zeros(
+                        (hidden_states.shape[0], block_start, hidden_states.shape[2]),
+                        dtype=hidden_states.dtype,
+                        device=hidden_states.device
+                    )
+                    hidden_states = torch.cat([prefix_hidden, hidden_states], dim=1)
+
+                    # Also need to pad cached logits for compute_logits()
+                    if hasattr(model, '_cached_logits'):
+                        prefix_logits = torch.zeros(
+                            (model._cached_logits.shape[0], block_start, model._cached_logits.shape[2]),
+                            dtype=model._cached_logits.dtype,
+                            device=model._cached_logits.device
+                        )
+                        model._cached_logits = torch.cat([prefix_logits, model._cached_logits], dim=1)
 
                 # Diagnostic logging for first step
                 if step_idx == 0 and block_idx == 0:

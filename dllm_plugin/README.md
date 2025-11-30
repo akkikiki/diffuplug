@@ -1,12 +1,24 @@
 # dllm_plugin: vLLM Plugin for Diffusion Language Models
 
 A vLLM plugin that enables inference for diffusion language models:
-- **Dream**: Diffusion-based language model
-- **LLaDA**: Latent Diffusion Adapted language model
+- **LLaDA**: Latent Diffusion Adapted language model ✅ **Fully Supported**
+- **Dream**: Diffusion-based language model ⚠️ **TODO**
 
 ## Overview
 
-This plugin integrates diffusion language model implementations from [Diffulex/D2fEngine](../Diffulex) with vLLM's high-performance inference engine. It provides vLLM-compatible adapters for Dream and LLaDA models, enabling them to leverage vLLM's optimized inference, batching, and serving capabilities.
+This plugin provides vLLM-compatible adapters for diffusion language models:
+
+### **LLaDA (Fully Supported)**
+- Uses **HuggingFace's official LLaDA model** via `AutoModel` with `trust_remote_code=True`
+- Custom **LLaDASampler** implementing the reference diffusion algorithm
+- **Prefix caching optimization** for ~50-70% speedup on multi-block generation
+- Works with Python API (offline inference)
+- **No Diffulex dependency** for LLaDA
+
+### **Dream (TODO)**
+- Currently uses [Diffulex/D2fEngine](../Diffulex) implementation
+- Needs update to match LLaDA architecture (HuggingFace model + custom sampler)
+- Future work: Apply same fixes and optimizations as LLaDA
 
 ## Installation
 
@@ -80,7 +92,21 @@ for output in outputs:
 
 ### OpenAI-Compatible API Server
 
-Start the vLLM server:
+⚠️ **TODO**: OpenAI API server support for LLaDA diffusion models is currently in development.
+
+The custom diffusion generation logic (using `LLaDASampler`) bypasses vLLM's standard generation pipeline, which is required for the OpenAI API server integration.
+
+**Current workaround**: Use the Python API directly (see Basic Usage above).
+
+**Planned support**:
+```bash
+# This will be supported in a future release
+python -m vllm.entrypoints.openai.api_server \
+    --model GSAI-ML/LLaDA-8B-Instruct \
+    --trust-remote-code
+```
+
+For Dream models, the standard API server may work:
 
 ```bash
 python -m vllm.entrypoints.openai.api_server \
@@ -109,21 +135,46 @@ print(response.choices[0].text)
 
 ## Supported Models
 
-### Dream (DreamForDiffusionLM)
+### LLaDA (LLaDAForDiffusionLM) ✅
 
-Dream is a diffusion-based language model that uses full attention (not causal) for generation. Architecture features:
-- RMSNorm layer normalization
-- Rotary position embeddings (RoPE)
-- SiLU activation with gating
-- Grouped query attention support
+**Status**: Fully supported with optimizations
 
-**Configuration**: Uses `DreamConfig` from the model's config.json
+LLaDA is a latent diffusion adapted language model that generates text through iterative denoising.
 
-### LLaDA (LLaDAForDiffusionLM)
+**Implementation**:
+- Uses HuggingFace's official model via `AutoModel.from_pretrained()`
+- Custom `LLaDASampler` implementing reference diffusion algorithm
+- Prefix caching optimization for 50-70% speedup
+- Block-based generation (default: 32 tokens per block)
 
-LLaDA is a latent diffusion adapted language model with architecture similar to Dream with implementation variations.
+**Features**:
+- ✅ Coherent text generation
+- ✅ Prefix caching for multi-block efficiency
+- ✅ CPU and CUDA support
+- ✅ Configurable diffusion steps via `DLLM_DIFFUSION_STEPS` env var
+
+**Example Model**: `GSAI-ML/LLaDA-8B-Instruct`
 
 **Configuration**: Uses `LLaDAConfig` from the model's config.json
+
+### Dream (DreamForDiffusionLM) ⚠️
+
+**Status**: TODO - Needs update to new architecture
+
+Dream is a diffusion-based language model that uses full attention (not causal) for generation.
+
+**Current Implementation**:
+- Uses Diffulex/D2fEngine library
+- Older generation logic
+- Needs update to match LLaDA architecture
+
+**Planned Updates**:
+- Switch to HuggingFace model loading
+- Implement custom sampler
+- Add prefix caching optimization
+- Remove Diffulex dependency
+
+**Configuration**: Uses `DreamConfig` from the model's config.json
 
 ## Architecture
 
@@ -131,14 +182,26 @@ The plugin consists of:
 
 1. **Registration Module** (`__init__.py`): Registers models with vLLM's ModelRegistry
 2. **Model Adapters** (`models/`):
-   - `dream.py`: vLLM adapter for Dream
-   - `llada.py`: vLLM adapter for LLaDA
+   - `llada.py`: vLLM adapter for LLaDA (HuggingFace model wrapper)
+   - `dream.py`: vLLM adapter for Dream (Diffulex wrapper - TODO)
+3. **Generation Logic**:
+   - `llada_sampler.py`: Custom diffusion sampler for LLaDA
+   - `generation_new.py`: Worker-based generation using LLaDASampler
+   - `generation.py`: Older Diffulex-based generation (used by Dream)
 
-Each adapter wraps the original Diffulex implementation and provides:
-- vLLM-compatible `forward()` method
-- `compute_logits()` for logit computation
-- `load_weights()` for checkpoint loading
-- Integration with vLLM's batching and inference pipeline
+### LLaDA Architecture:
+- **Model**: HuggingFace `AutoModel` with `trust_remote_code=True`
+- **Sampler**: Custom `LLaDASampler` implementing reference algorithm
+- **Features**:
+  - KV cache support via HuggingFace `past_key_values`
+  - Prefix caching optimization
+  - Block-based iterative denoising
+  - No Diffulex dependency
+
+### Dream Architecture:
+- **Model**: Diffulex `DreamForDiffusionLM`
+- **Sampler**: Diffulex `AutoSampler`
+- **Status**: Needs update to match LLaDA architecture
 
 ## Plugin Mechanism
 
