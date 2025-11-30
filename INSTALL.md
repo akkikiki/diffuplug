@@ -66,7 +66,7 @@ The `-e` flag installs the package in editable mode, which is useful for develop
 If you prefer to set up everything from the plugin directory:
 
 ```bash
-cd /path/to/dllm_vllm_plugin/dllm_plugin
+cd /path/to/diffuplug
 
 # Create and activate virtual environment
 uv venv
