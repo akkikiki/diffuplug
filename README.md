@@ -277,6 +277,10 @@ This project is licensed under the Apache License 2.0 - see the LICENSE file for
 
 ## References
 
+- [LLaDA](https://github.com/ML-GSAI/LLaDA/tree/main) - Original LLaDA implementation
+- [DiffuLex](https://github.com/zhijie-group/Diffulex/tree/main) - nano-vllm extension for diffusion language models (LLaDA, Dream)
+- [vLLM](https://github.com/vllm-project/vllm) - High-performance LLM inference engine
 - [vLLM Documentation](https://docs.vllm.ai/)
 - [vLLM Plugin System](https://docs.vllm.ai/en/latest/design/plugin_system.html)
+- [nano-vllm](https://github.com/GeeeekExplorer/nano-vllm) - Minimal implementation reference for vLLM model integration
 - [Diffulex/D2fEngine](../Diffulex)
