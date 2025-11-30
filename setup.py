@@ -9,7 +9,8 @@ setup(
     version="0.1.0",
     description="vLLM plugin for Diffusion Language Models (Dream and LLaDA)",
     author="dllm_plugin contributors",
-    packages=find_packages(),
+    package_dir={"": "src"},
+    packages=find_packages(where="src"),
     python_requires=">=3.9",
     install_requires=[
         "vllm>=0.6.0",
