@@ -2,7 +2,7 @@
   <img src="assets/diffuplug_logo_v4.png" alt="Plugin Icon" width="500"/>
 </p>
 
-# dllm_plugin: vLLM Plugin for Diffusion Language Models
+# A vLLM Plugin for Diffusion Language Models
 
 A vLLM plugin that enables inference for diffusion language models:
 - **LLaDA**: Latent Diffusion Adapted language model ✅ **Fully Supported**
