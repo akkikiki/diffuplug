@@ -2,6 +2,10 @@
   <img src="assets/diffuplug_logo_v4.png" alt="Plugin Icon" width="500"/>
 </p>
 
+
+
+
+
 # A vLLM Plugin for Diffusion Language Models
 
 A vLLM plugin that enables inference for diffusion language models:
@@ -11,6 +15,8 @@ A vLLM plugin that enables inference for diffusion language models:
 ## Overview
 
 This plugin provides vLLM-compatible adapters for diffusion language models:
+
+https://github.com/user-attachments/assets/a0ddc086-2471-4d2b-8868-8c36f4ab12fa
 
 ### **LLaDA (Fully Supported)**
 - Uses **HuggingFace's official LLaDA model** via `AutoModel` with `trust_remote_code=True`
