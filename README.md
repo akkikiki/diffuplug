@@ -18,7 +18,7 @@ This plugin provides vLLM-compatible adapters for diffusion language models:
 
 https://github.com/user-attachments/assets/a0ddc086-2471-4d2b-8868-8c36f4ab12fa
 
-### **LLaDA (Fully Supported)**
+### **LLaDA**
 - Uses **HuggingFace's official LLaDA model** via `AutoModel` with `trust_remote_code=True`
 - Custom **LLaDASampler** implementing the reference diffusion algorithm
 - **Prefix caching** for generation
@@ -77,7 +77,7 @@ The custom diffusion generation logic (using `LLaDASampler`) bypasses vLLM's sta
 
 ## Supported Models
 
-### LLaDA (LLaDAModelLM) ✅
+### LLaDA (LLaDAModelLM)
 
 **Implementation**:
 - Uses LLaDA's HF implemenation via `AutoModel.from_pretrained()`
@@ -85,7 +85,7 @@ The custom diffusion generation logic (using `LLaDASampler`) bypasses vLLM's sta
 - Prefix caching added
 
 **Features**:
-- ✅ CPU support
+- CPU support
 
 **Example Model**: `GSAI-ML/LLaDA-8B-Instruct`
 
