@@ -20,7 +20,7 @@ https://github.com/user-attachments/assets/a0ddc086-2471-4d2b-8868-8c36f4ab12fa
 
 ### **LLaDA**
 - Uses **HuggingFace's official LLaDA model** via `AutoModel` with `trust_remote_code=True`
-- Custom **LLaDASampler** implementing the reference diffusion algorithm
+- Custom **LLaDASampler** implementing the reference generation code at [LLaDA](https://github.com/ML-GSAI/LLaDA/tree/main) - Original LLaDA implementation.
 - **Prefix caching** for generation
 - Works with Python API (offline inference)
 - **No Diffulex dependency** for LLaDA
