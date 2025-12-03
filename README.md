@@ -62,29 +62,9 @@ For detailed installation instructions, see [INSTALL.md](INSTALL.md).
 
 ## Usage
 
-### Basic Usage with vLLM
-
-```python
-from vllm import LLM, SamplingParams
-
-# Initialize the LLM with a LLaDA model
-llm = LLM(
-    model="GSAI-ML/LLaDA-8B-Instruct",
-    trust_remote_code=True
-)
-
-# Create sampling parameters
-sampling_params = SamplingParams(
-    temperature=1.0,
-    max_tokens=100
-)
-
-# Generate text
-prompts = ["Tell me about diffusion language models."]
-outputs = llm.generate(prompts, sampling_params)
-
-for output in outputs:
-    print(f"Generated text: {output.outputs[0].text}")
+### Example Usage with vLLM
+```
+python example_usage.py --model GSAI-ML/LLaDA-8B-Instruct --max-tokens 20 --diffusion-steps 32
 ```
 
 ### OpenAI-Compatible API Server
@@ -99,21 +79,13 @@ The custom diffusion generation logic (using `LLaDASampler`) bypasses vLLM's sta
 
 ### LLaDA (LLaDAModelLM) ✅
 
-**Status**: Fully supported with optimizations
-
-LLaDA is a latent diffusion adapted language model that generates text through iterative denoising.
-
 **Implementation**:
-- Uses HuggingFace's official model via `AutoModel.from_pretrained()`
-- Custom `LLaDASampler` implementing reference diffusion algorithm
-- Prefix caching optimization
-- Block-based generation (default: 32 tokens per block)
+- Uses LLaDA's HF implemenation via `AutoModel.from_pretrained()`
+- Custom `LLaDASampler` implementing diffusion algorithm from [LLaDA](https://github.com/ML-GSAI/LLaDA/tree/main) including block-based generation
+- Prefix caching added
 
 **Features**:
-- ✅ Coherent text generation
-- ✅ Prefix caching for multi-block efficiency
-- ✅ CPU and CUDA support
-- ✅ Configurable diffusion steps via `DLLM_DIFFUSION_STEPS` env var
+- ✅ CPU support
 
 **Example Model**: `GSAI-ML/LLaDA-8B-Instruct`
 
