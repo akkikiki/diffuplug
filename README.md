@@ -97,7 +97,7 @@ The custom diffusion generation logic (using `LLaDASampler`) bypasses vLLM's sta
 
 ## Supported Models
 
-### LLaDA (LLaDAForDiffusionLM) ✅
+### LLaDA (LLaDAModelLM) ✅
 
 **Status**: Fully supported with optimizations
 
@@ -210,7 +210,7 @@ When vLLM does not recognize a diffusion model:
 1. Verify plugin installation: `uv pip list | grep dllm-plugin`
 2. Check the model's `config.json` for correct `architectures` field:
    - For Dream: `["DreamForDiffusionLM"]`
-   - For LLaDA: `["LLaDAForDiffusionLM"]`
+   - For LLaDA: `["LLaDAModelLM"]`
 
 ### Import Errors
 
