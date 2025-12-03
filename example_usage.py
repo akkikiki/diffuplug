@@ -45,7 +45,7 @@ parser.add_argument(
 parser.add_argument(
     "--prompt",
     type=str,
-    default="What is 2+2? Think setp by step",
+    default="What is 2+2? ",
     help="Input prompt for generation",
 )
 parser.add_argument(

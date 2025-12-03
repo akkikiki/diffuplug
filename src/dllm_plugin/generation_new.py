@@ -161,9 +161,21 @@ def patch_engine_core_for_diffusion_simple():
                         gen_length = min(max_tokens, 128)  # Limit for CPU performance
                         block_length = diffusion_config.get('diffusion_block_size', 32)
 
-                        # Ensure block_length divides gen_length
-                        if gen_length % block_length != 0:
+                        # Adjust block_length and gen_length to be compatible
+                        if gen_length < block_length:
+                            # If requested gen_length is smaller than block_length, cap block_length to gen_length
+                            block_length = gen_length
+                            logger.info(
+                                f"[Worker Process] Adjusted block_length from {diffusion_config.get('diffusion_block_size', 32)} "
+                                f"to {block_length} to match requested gen_length={gen_length}"
+                            )
+                        elif gen_length % block_length != 0:
+                            # Only round up if gen_length is greater than block_length
                             gen_length = ((gen_length // block_length) + 1) * block_length
+                            logger.info(
+                                f"[Worker Process] Rounded gen_length up to {gen_length} "
+                                f"(nearest multiple of block_length={block_length})"
+                            )
 
                         # Get diffusion steps from config
                         num_blocks = gen_length // block_length

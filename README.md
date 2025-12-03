@@ -47,10 +47,6 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv venv
 source .venv/bin/activate
 
-# Install Diffulex
-cd Diffulex
-uv pip install -e Diffulex
-
 # Install vLLM
 uv pip install vllm
 
@@ -59,6 +55,8 @@ uv pip install -e .
 ```
 
 The plugin automatically registers with vLLM through the entry points mechanism.
+
+**Note**: Diffulex is no longer required for LLaDA models.
 
 For detailed installation instructions, see [INSTALL.md](INSTALL.md).
 
@@ -69,9 +67,9 @@ For detailed installation instructions, see [INSTALL.md](INSTALL.md).
 ```python
 from vllm import LLM, SamplingParams
 
-# Initialize the LLM with a Dream or LLaDA model
+# Initialize the LLM with a LLaDA model
 llm = LLM(
-    model="path/to/dream/model",
+    model="GSAI-ML/LLaDA-8B-Instruct",
     trust_remote_code=True
 )
 
@@ -96,41 +94,6 @@ for output in outputs:
 The custom diffusion generation logic (using `LLaDASampler`) bypasses vLLM's standard generation pipeline, which is required for the OpenAI API server integration.
 
 **Current workaround**: Use the Python API directly (see Basic Usage above).
-
-**Planned support**:
-```bash
-# This will be supported in a future release
-python -m vllm.entrypoints.openai.api_server \
-    --model GSAI-ML/LLaDA-8B-Instruct \
-    --trust-remote-code
-```
-
-For Dream models, the standard API server may work:
-
-```bash
-python -m vllm.entrypoints.openai.api_server \
-    --model path/to/dream/model \
-    --trust-remote-code
-```
-
-Use the API with the OpenAI client:
-
-```python
-from openai import OpenAI
-
-client = OpenAI(
-    base_url="http://localhost:8000/v1",
-    api_key="dummy"
-)
-
-response = client.completions.create(
-    model="path/to/dream/model",
-    prompt="Tell me about diffusion language models.",
-    max_tokens=100
-)
-
-print(response.choices[0].text)
-```
 
 ## Supported Models
 
@@ -253,7 +216,6 @@ When vLLM does not recognize a diffusion model:
 
 Ensure all dependencies are installed:
 ```bash
-uv pip install -e ../Diffulex  # D2fEngine package
 uv pip install vllm>=0.6.0
 uv pip install -e .
 ```
