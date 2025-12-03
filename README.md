@@ -9,7 +9,7 @@
 # A vLLM Plugin for Diffusion Language Models
 
 A vLLM plugin that enables inference for diffusion language models:
-- **LLaDA**: Latent Diffusion Adapted language model ✅ **Fully Supported**
+- **LLaDA**: Latent Diffusion Adapted language model ✅ 
 - **Dream**: Diffusion-based language model ⚠️ **TODO**
 
 ## Overview
@@ -95,18 +95,9 @@ The custom diffusion generation logic (using `LLaDASampler`) bypasses vLLM's sta
 
 **Status**: TODO - Needs update to new architecture
 
-Dream is a diffusion-based language model that uses full attention (not causal) for generation.
-
 **Current Implementation**:
-- Uses Diffulex/D2fEngine library
-- Older generation logic
-- Needs update to match LLaDA architecture
-
-**Planned Updates**:
-- Switch to HuggingFace model loading
-- Implement custom sampler
-- Add prefix caching optimization
-- Remove Diffulex dependency
+- Uses Diffulex/D2fEngine library with older generation logic
+- Requires update to match LLaDA architecture (HuggingFace model + custom sampler)
 
 **Configuration**: Uses `DreamConfig` from the model's config.json
 
@@ -165,14 +156,6 @@ export VLLM_PLUGINS=register_dllm_models
 export VLLM_PLUGINS=
 ```
 
-## Differences from Standard vLLM Models
-
-Diffusion language models have unique characteristics:
-
-1. **Full Attention**: Unlike causal LMs, diffusion models use full (bidirectional) attention
-2. **No KV Caching**: Standard KV caching does not apply to diffusion models
-3. **Special Generation**: Different sampling strategies optimized for diffusion
-
 ## Troubleshooting
 
 ### Model Not Recognized
@@ -197,15 +180,8 @@ uv pip install -e .
 ### Running Tests
 
 ```bash
-pytest tests/
+pytest
 ```
-
-### Contributing
-
-Contributions are welcome. Please ensure:
-1. Code follows existing style conventions
-2. All tests pass
-3. Documentation is updated accordingly
 
 ## License
 
@@ -215,8 +191,7 @@ This project is licensed under the Apache License 2.0 - see the LICENSE file for
 
 - [LLaDA](https://github.com/ML-GSAI/LLaDA/tree/main) - Original LLaDA implementation
 - [DiffuLex](https://github.com/zhijie-group/Diffulex/tree/main) - nano-vllm extension for diffusion language models (LLaDA, Dream)
-- [vLLM](https://github.com/vllm-project/vllm) - High-performance LLM inference engine
+- [vLLM](https://github.com/vllm-project/vllm)
 - [vLLM Documentation](https://docs.vllm.ai/)
 - [vLLM Plugin System](https://docs.vllm.ai/en/latest/design/plugin_system.html)
 - [nano-vllm](https://github.com/GeeeekExplorer/nano-vllm) - Minimal implementation reference for vLLM model integration
-- [Diffulex/D2fEngine](../Diffulex)
