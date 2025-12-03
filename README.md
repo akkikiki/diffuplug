@@ -21,7 +21,7 @@ https://github.com/user-attachments/assets/a0ddc086-2471-4d2b-8868-8c36f4ab12fa
 ### **LLaDA (Fully Supported)**
 - Uses **HuggingFace's official LLaDA model** via `AutoModel` with `trust_remote_code=True`
 - Custom **LLaDASampler** implementing the reference diffusion algorithm
-- **Prefix caching optimization** for ~50-70% speedup on multi-block generation
+- **Prefix caching** for generation
 - Works with Python API (offline inference)
 - **No Diffulex dependency** for LLaDA
 
@@ -106,7 +106,7 @@ LLaDA is a latent diffusion adapted language model that generates text through i
 **Implementation**:
 - Uses HuggingFace's official model via `AutoModel.from_pretrained()`
 - Custom `LLaDASampler` implementing reference diffusion algorithm
-- Prefix caching optimization for 50-70% speedup
+- Prefix caching optimization
 - Block-based generation (default: 32 tokens per block)
 
 **Features**:
