@@ -118,9 +118,6 @@ The plugin consists of:
 - **Model**: HuggingFace `AutoModel` with `trust_remote_code=True`
 - **Sampler**: Custom `LLaDASampler` implementing reference algorithm
 - **Features**:
-  - KV cache support via HuggingFace `past_key_values`
-  - Prefix caching optimization
-  - Block-based iterative denoising
   - No Diffulex dependency
 
 ## Plugin Mechanism
